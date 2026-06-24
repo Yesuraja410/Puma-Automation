@@ -280,10 +280,8 @@ with st.sidebar:
 st.title("PUMA Automation (Status & Stock, Order Valiation, Listing QC)")
 st.write("Country: " + country + "  |  Upload files in the sidebar then click Run Validation.")
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "Status Report",
-    "SKU Validation",
-    "PID Validation",
     "Downloads",
     "Saved Reports",
     "QC Cross-Check",
@@ -424,52 +422,6 @@ with tab1:
         st.info("Run validation to see results.")
 
 
-# ── Tab 2 – SKU Validation ───────────────────────────────────────────────────
-with tab2:
-    if "sk_preview" in st.session_state:
-        rc  = st.session_state.get("country", country)
-        df  = st.session_state["sk_preview"].copy()
-        tot = st.session_state.get("sk_len", len(df))
-        st.markdown("### SKU Validation - " + rc)
-        if not df.empty:
-            c1, c2 = st.columns(2)
-            if "Final Check" in df.columns:
-                opts = sorted(df["Final Check"].unique())
-                sel  = c1.multiselect("Final Check", opts, default=opts, key="f2")
-                df   = df[df["Final Check"].isin(sel)]
-            if "Marketplace" in df.columns:
-                opts2 = sorted(df["Marketplace"].unique())
-                sel2  = c2.multiselect("Marketplace", opts2, default=opts2, key="f2b")
-                df    = df[df["Marketplace"].isin(sel2)]
-        show_df(df)
-        if tot > 500:
-            st.info("Preview shows first 500 rows. Download full report for all " + str(tot) + " rows.")
-    else:
-        st.info("Run validation to see results.")
-
-
-# ── Tab 3 – PID Validation ───────────────────────────────────────────────────
-with tab3:
-    if "pi_preview" in st.session_state:
-        rc  = st.session_state.get("country", country)
-        df  = st.session_state["pi_preview"].copy()
-        tot = st.session_state.get("pi_len", len(df))
-        st.markdown("### PID Validation - " + rc)
-        if not df.empty:
-            c1, c2 = st.columns(2)
-            if "Final Check" in df.columns:
-                opts = sorted(df["Final Check"].unique())
-                sel  = c1.multiselect("Final Check", opts, default=opts, key="f3")
-                df   = df[df["Final Check"].isin(sel)]
-            if "Dual Status" in df.columns:
-                opts2 = sorted(df["Dual Status"].unique())
-                sel2  = c2.multiselect("Dual Status", opts2, default=opts2, key="f3b")
-                df    = df[df["Dual Status"].isin(sel2)]
-        show_df(df)
-        if tot > 500:
-            st.info("Preview shows first 500 rows. Download full report for all " + str(tot) + " rows.")
-    else:
-        st.info("Run validation to see results.")
 
 
 # ── Tab 4 – Downloads (current session) ──────────────────────────────────────
