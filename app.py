@@ -150,6 +150,18 @@ with st.sidebar:
     )
     st.markdown("---")
 
+    # Initialize all Order & OMS marketplace validation variables to None by default
+    laz_sg_order = None
+    laz_my_order = None
+    laz_ph_order = None
+    shp_sg_order = None
+    shp_my_order = None
+    shp_ph_order = None
+    zal_sg_order = None
+    zal_my_order = None
+    zal_ph_order = None
+    ttk_my_order = None
+
     if task in ["Status Validation", "Status validation QC"]:
         st.markdown("## Configuration")
         country = st.selectbox("Select Country", ["SG", "MY", "PH"])
@@ -220,6 +232,25 @@ with st.sidebar:
             order_tc = st.file_uploader("TC Order Report", type=["xlsx","xls","csv"], key="order_tc")
             order_oms = st.file_uploader("OMS Order Report", type=["xlsx","xls","csv"], key="order_oms")
             seller_contacts = st.file_uploader("Seller Contact List (Optional)", type=["xlsx","xls","csv"], key="seller_contacts")
+
+        with st.expander("Upload Marketplace Reports (10 Channels)", expanded=False):
+            st.markdown("### Lazada")
+            laz_sg_order = st.file_uploader("Lazada SG Order Report", type=["xlsx","xls","csv"], key="laz_sg_order")
+            laz_my_order = st.file_uploader("Lazada MY Order Report", type=["xlsx","xls","csv"], key="laz_my_order")
+            laz_ph_order = st.file_uploader("Lazada PH Order Report", type=["xlsx","xls","csv"], key="laz_ph_order")
+            
+            st.markdown("### Shopee")
+            shp_sg_order = st.file_uploader("Shopee SG Order Report", type=["xlsx","xls","csv"], key="shp_sg_order")
+            shp_my_order = st.file_uploader("Shopee MY Order Report", type=["xlsx","xls","csv"], key="shp_my_order")
+            shp_ph_order = st.file_uploader("Shopee PH Order Report", type=["xlsx","xls","csv"], key="shp_ph_order")
+            
+            st.markdown("### Zalora")
+            zal_sg_order = st.file_uploader("Zalora SG Order Report", type=["xlsx","xls","csv"], key="zal_sg_order")
+            zal_my_order = st.file_uploader("Zalora MY Order Report", type=["xlsx","xls","csv"], key="zal_my_order")
+            zal_ph_order = st.file_uploader("Zalora PH Order Report", type=["xlsx","xls","csv"], key="zal_ph_order")
+            
+            st.markdown("### TikTok")
+            ttk_my_order = st.file_uploader("TikTok MY Order Report", type=["xlsx","xls","csv"], key="ttk_my_order")
 
     elif task == "Listing QC":
         # Fallbacks for Status Validation
@@ -1020,12 +1051,26 @@ elif task == "Order & OMS Validation":
             if st.button("Run Order Validation & Analysis", type="primary", use_container_width=True):
                 with st.spinner("Processing reports and running validations..."):
                     try:
-                        res = process_and_validate_orders(order_pending, order_tc, order_oms, seller_contacts)
+                        marketplace_files = {
+                            "Lazada SG": laz_sg_order,
+                            "Lazada MY": laz_my_order,
+                            "Lazada PH": laz_ph_order,
+                            "Shopee SG": shp_sg_order,
+                            "Shopee MY": shp_my_order,
+                            "Shopee PH": shp_ph_order,
+                            "Zalora SG": zal_sg_order,
+                            "Zalora MY": zal_my_order,
+                            "Zalora PH": zal_ph_order,
+                            "TikTok MY": ttk_my_order
+                        }
+                        res = process_and_validate_orders(order_pending, order_tc, order_oms, seller_contacts, marketplace_files)
                         st.session_state["order_enriched_df"] = res["enriched_pending_df"]
                         st.session_state["order_disc_df"] = res["discrepancies_df"]
                         st.session_state["order_summary"] = res["summary"]
                         st.session_state["order_groups"] = res["seller_groups"]
                         st.session_state["order_id_col"] = res["pending_order_id_col"]
+                        st.session_state["order_missing_mp_df"] = res["missing_mp_df"]
+                        st.session_state["order_mp_summary_df"] = res["mp_summary_df"]
                         st.success("Validation complete! See results below.")
                     except Exception as e:
                         st.error(f"Error during order processing: {str(e)}")
@@ -1037,14 +1082,25 @@ elif task == "Order & OMS Validation":
                 enriched_df = st.session_state["order_enriched_df"]
                 disc_df = st.session_state["order_disc_df"]
                 seller_groups = st.session_state["order_groups"]
+                missing_mp_df = st.session_state.get("order_missing_mp_df", pd.DataFrame())
+                mp_summary_df = st.session_state.get("order_mp_summary_df", pd.DataFrame())
                 
                 # Display metrics
                 st.markdown("#### Key Metrics")
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Total Pending Orders", summary["total_pending_orders"])
-                m2.metric("Enriched SLAs from TC", summary["enriched_sla_count"])
-                m3.metric("Validation Mismatches", summary["total_discrepancies"], delta=-summary["total_discrepancies"] if summary["total_discrepancies"] > 0 else 0, delta_color="inverse")
-                m4.metric("Total Sellers / Stores", summary["total_sellers"])
+                if not mp_summary_df.empty:
+                    m1, m2, m3, m4, m5 = st.columns(5)
+                    m1.metric("Total Pending Orders", summary["total_pending_orders"])
+                    m2.metric("Enriched SLAs from TC", summary["enriched_sla_count"])
+                    m3.metric("Validation Mismatches", summary["total_discrepancies"], delta=-summary["total_discrepancies"] if summary["total_discrepancies"] > 0 else 0, delta_color="inverse")
+                    m4.metric("Total Sellers / Stores", summary["total_sellers"])
+                    total_missing_mp = summary.get("total_missing_mp_orders", 0)
+                    m5.metric("Marketplace Missing in TC", total_missing_mp, delta=-total_missing_mp if total_missing_mp > 0 else 0, delta_color="inverse")
+                else:
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Total Pending Orders", summary["total_pending_orders"])
+                    m2.metric("Enriched SLAs from TC", summary["enriched_sla_count"])
+                    m3.metric("Validation Mismatches", summary["total_discrepancies"], delta=-summary["total_discrepancies"] if summary["total_discrepancies"] > 0 else 0, delta_color="inverse")
+                    m4.metric("Total Sellers / Stores", summary["total_sellers"])
                 
                 # Download Section
                 st.markdown("#### Download Report")
@@ -1053,6 +1109,10 @@ elif task == "Order & OMS Validation":
                     enriched_df.to_excel(writer, sheet_name="Enriched Pending Orders", index=False)
                     if not disc_df.empty:
                         disc_df.to_excel(writer, sheet_name="Status Discrepancies", index=False)
+                    if not missing_mp_df.empty:
+                        missing_mp_df.to_excel(writer, sheet_name="Missing Marketplace Orders", index=False)
+                    if not mp_summary_df.empty:
+                        mp_summary_df.to_excel(writer, sheet_name="Marketplace Match Summary", index=False)
                 
                 st.download_button(
                     label="📥 Download Enriched Pending Orders & Discrepancies (Excel)",
@@ -1065,11 +1125,16 @@ elif task == "Order & OMS Validation":
                 
                 # Display layout of tables
                 st.markdown("#### Detailed Results")
-                sub_tab1, sub_tab2, sub_tab3 = st.tabs([
-                    "Enriched Pending Orders", 
-                    "OMS vs TC Discrepancies", 
-                    "Seller Grouping & Email Center"
-                ])
+                
+                tabs_list = ["Enriched Pending Orders", "OMS vs TC Discrepancies", "Seller Grouping & Email Center"]
+                if not mp_summary_df.empty:
+                    tabs_list.append("Marketplace Order Validation")
+                    
+                sub_tabs = st.tabs(tabs_list)
+                sub_tab1 = sub_tabs[0]
+                sub_tab2 = sub_tabs[1]
+                sub_tab3 = sub_tabs[2]
+                sub_tab4 = sub_tabs[3] if len(sub_tabs) > 3 else None
                 
                 with sub_tab1:
                     st.markdown("##### Enriched Pending Orders Report")
@@ -1163,6 +1228,28 @@ elif task == "Order & OMS Validation":
                         progress_bar.progress((i + 1) / total_sellers)
                     
                     st.success(f"Finished sending! Success: {success_count}, Failed/Skipped: {fail_count}")
+
+                if sub_tab4 is not None:
+                    with sub_tab4:
+                        st.markdown("##### Marketplace Order Reports vs TC Sync Status")
+                        st.markdown("This audit compares uploaded marketplace order reports against the TC Order Report to highlight missing orders.")
+                        
+                        st.markdown("###### Channel Sync Summary")
+                        st.dataframe(mp_summary_df, use_container_width=True, hide_index=True)
+                        
+                        st.markdown("###### Detailed Missing Orders (Not in TC)")
+                        if missing_mp_df.empty:
+                            st.success("🎉 All uploaded marketplace orders match TC perfectly!")
+                        else:
+                            total_missing = len(missing_mp_df)
+                            st.warning(f"⚠️ Found {total_missing} marketplace orders missing from the TC report.")
+                            
+                            # Filter option for channel
+                            channels_found = sorted(missing_mp_df["Channel"].unique())
+                            selected_channels = st.multiselect("Filter by Marketplace Channel", channels_found, default=channels_found, key="mp_channel_filter")
+                            filtered_missing_df = missing_mp_df[missing_mp_df["Channel"].isin(selected_channels)]
+                            
+                            st.dataframe(filtered_missing_df, use_container_width=True, hide_index=True)
 
 elif task == "Listing QC":
     st.write("Upload target listings sheet and reference files in the sidebar to validate.")
