@@ -228,7 +228,13 @@ with st.sidebar:
 
         st.markdown("## Order & OMS Validation")
         with st.expander("Upload Order Reports", expanded=True):
-            order_pending = st.file_uploader("Pending Order Report", type=["xlsx","xls","csv"], key="order_pending")
+            pending_source = st.radio("1. Pending Order Report Source", ["Upload File", "Google Sheet Link"], index=0, key="order_pending_source")
+            if pending_source == "Upload File":
+                order_pending = st.file_uploader("Pending Order Report", type=["xlsx","xls","csv"], key="order_pending")
+            else:
+                gsheet_url = st.text_input("Enter Google Sheet Link", placeholder="https://docs.google.com/spreadsheets/d/...", key="order_pending_gsheet")
+                order_pending = gsheet_url if gsheet_url.strip() else None
+
             order_tc = st.file_uploader("TC Order Report", type=["xlsx","xls","csv"], key="order_tc")
             order_oms = st.file_uploader("OMS Order Report", type=["xlsx","xls","csv"], key="order_oms")
             seller_contacts = st.file_uploader("Seller Contact List (Optional)", type=["xlsx","xls","csv"], key="seller_contacts")
