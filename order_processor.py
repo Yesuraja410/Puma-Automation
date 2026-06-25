@@ -2,6 +2,40 @@
 import pandas as pd
 import numpy as np
 import io
+import re
+import urllib.request
+import urllib.error
+
+def get_google_sheet_download_url(url):
+    pattern = r"/spreadsheets/d/([a-zA-Z0-9-_]+)"
+    match = re.search(pattern, url)
+    if match:
+        spreadsheet_id = match.group(1)
+        return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=xlsx"
+    return None
+
+def download_google_sheet(url):
+    download_url = get_google_sheet_download_url(url)
+    if not download_url:
+        download_url = url
+    try:
+        req = urllib.request.Request(
+            download_url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req) as response:
+            data = response.read()
+        return io.BytesIO(data)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise ValueError(
+                "Failed to download Google Sheet: Access Denied (HTTP 401/403 Unauthorized). "
+                "Please ensure that the sharing settings of your Google Sheet are set to "
+                "'Anyone with the link can view' or 'Anyone with the link can edit' (restricted sheets require auth, which is not supported)."
+            )
+        raise ValueError(f"Failed to download Google Sheet: HTTP Error {e.code} - {e.reason}")
+    except Exception as e:
+        raise ValueError(f"Failed to download Google Sheet from URL: {str(e)}")
 
 def _clean_str(val):
     if val is None:
@@ -85,7 +119,7 @@ def load_file_safely(file):
     except Exception as e:
         raise ValueError(f"Failed to read file {file.name}: {str(e)}")
 
-def process_and_validate_orders(pending_file, tc_file, oms_file, contacts_file=None):
+def process_and_validate_orders(pending_file, tc_file, oms_file, contacts_file=None, marketplace_files=None):
     """
     Process Pending Order Report, TC Report, and OMS Report.
     Returns:
@@ -97,7 +131,12 @@ def process_and_validate_orders(pending_file, tc_file, oms_file, contacts_file=N
       }
     """
     # ── 1. Load DataFrames ────────────────────────────────────────────────────
-    df_pending = load_file_safely(pending_file)
+    if pending_file:
+        if isinstance(pending_file, str) and (pending_file.startswith("http://") or pending_file.startswith("https://")):
+            pending_file = download_google_sheet(pending_file)
+        df_pending = load_file_safely(pending_file)
+    else:
+        df_pending = pd.DataFrame()
     df_tc = load_file_safely(tc_file)
     df_oms = load_file_safely(oms_file)
     df_contacts = load_file_safely(contacts_file) if contacts_file is not None else pd.DataFrame()
@@ -352,10 +391,133 @@ def process_and_validate_orders(pending_file, tc_file, oms_file, contacts_file=N
         "total_sellers": len(seller_groups)
     }
 
+    # ── 6. Marketplace order validation (Channel-wise vs TC) ──────────────────
+    missing_mp_orders = []
+    mp_summaries = []
+    
+    # Get set of all cleaned TC order IDs
+    tc_order_ids = set()
+    if not df_tc.empty and tc_id_col:
+        tc_order_ids = set(df_tc[tc_id_col].dropna().apply(_clean_order_id))
+        
+    if marketplace_files:
+        for channel_name, m_file in marketplace_files.items():
+            if m_file is None:
+                continue
+            try:
+                df_m = load_file_safely(m_file)
+            except Exception:
+                continue
+                
+            if df_m.empty:
+                continue
+                
+            # Determine platform to know which column candidates to use
+            platform = channel_name.split()[0] # Lazada, Shopee, Zalora, TikTok
+            
+            if platform == "Lazada":
+                candidates = ["orderNumber", "order_number", "order number"]
+            elif platform == "Zalora":
+                candidates = ["Order Number", "order number", "order_number", "orderNumber"]
+            elif platform == "Shopee":
+                candidates = ["Order ID", "order_id", "order id", "OrderID"]
+            elif platform == "TikTok":
+                candidates = ["Order ID", "order_id", "order id", "OrderID"]
+            else:
+                candidates = ["Order ID", "Order Number", "order_number", "orderNumber", "order_id"]
+                
+            id_col = _find_column(df_m, candidates)
+            if not id_col:
+                fallback_candidates = ["Order ID", "Order Number", "Order No", "OrderNo", "OrderID", "OrderNumber"]
+                id_col = _find_column(df_m, fallback_candidates)
+                if not id_col:
+                    continue
+                    
+            # Normalize order IDs in the marketplace dataframe
+            df_m = df_m.copy()
+            df_m[id_col] = df_m[id_col].apply(_clean_order_id)
+            
+            # Extract other context columns if they exist
+            sku_col = _find_column(df_m, ["Seller SKU", "SKU", "SellerSku", "item_sku", "item sku"])
+            status_col = _find_column(df_m, ["Status", "Order Status", "orderStatus", "item_status", "status"])
+            date_col = _find_column(df_m, ["Order Date", "Created At", "date", "created_at", "create_time", "create time"])
+            price_col = _find_column(df_m, ["Price", "Amount", "payment_amount", "item_price", "price", "amount"])
+            
+            # Find unique order IDs in this marketplace file
+            unique_order_ids = df_m[id_col].dropna().unique()
+            total_orders = len(unique_order_ids)
+            
+            channel_missing_count = 0
+            
+            for m_oid in unique_order_ids:
+                if not m_oid:
+                    continue
+                if m_oid not in tc_order_ids:
+                    channel_missing_count += 1
+                    
+                    # Extract aggregated values for this missing order
+                    order_rows = df_m[df_m[id_col] == m_oid]
+                    
+                    sku_val = "N/A"
+                    if sku_col:
+                        skus = order_rows[sku_col].dropna().unique()
+                        skus = [s for s in skus if s.strip()]
+                        sku_val = ", ".join(skus) if skus else "N/A"
+                        
+                    status_val = "N/A"
+                    if status_col:
+                        statuses = order_rows[status_col].dropna().unique()
+                        statuses = [s for s in statuses if s.strip()]
+                        status_val = ", ".join(statuses) if statuses else "N/A"
+                        
+                    date_val = "N/A"
+                    if date_col:
+                        date_val = _clean_str(order_rows.iloc[0][date_col])
+                        
+                    price_val = "N/A"
+                    if price_col:
+                        try:
+                            prices = order_rows[price_col].dropna().astype(str).str.replace(",", "").astype(float)
+                            price_val = f"{prices.sum():.2f}"
+                        except Exception:
+                            prices = order_rows[price_col].dropna().unique()
+                            price_val = ", ".join([str(p) for p in prices])
+                            
+                    missing_mp_orders.append({
+                        "Channel": channel_name,
+                        "Marketplace Order ID": m_oid,
+                        "Seller SKU": sku_val,
+                        "Marketplace Status": status_val,
+                        "Order Date": date_val,
+                        "Price": price_val
+                    })
+                    
+            matched_count = total_orders - channel_missing_count
+            match_rate = (matched_count / total_orders * 100) if total_orders > 0 else 100.0
+            
+            mp_summaries.append({
+                "Channel": channel_name,
+                "Total Uploaded Orders": total_orders,
+                "Matched in TC": matched_count,
+                "Missing in TC": channel_missing_count,
+                "Match Rate (%)": f"{match_rate:.2f}%"
+            })
+            
+    df_missing_mp = pd.DataFrame(missing_mp_orders) if missing_mp_orders else pd.DataFrame(columns=[
+        "Channel", "Marketplace Order ID", "Seller SKU", "Marketplace Status", "Order Date", "Price"
+    ])
+    df_mp_summary = pd.DataFrame(mp_summaries) if mp_summaries else pd.DataFrame(columns=[
+        "Channel", "Total Uploaded Orders", "Matched in TC", "Missing in TC", "Match Rate (%)"
+    ])
+
+    summary["total_missing_mp_orders"] = len(df_missing_mp)
+
     return {
         "enriched_pending_df": df_pending,
         "discrepancies_df": df_discrepancies,
         "summary": summary,
         "seller_groups": seller_groups,
-        "pending_order_id_col": target_sla_col
+        "pending_order_id_col": target_sla_col,
+        "missing_mp_df": df_missing_mp,
+        "mp_summary_df": df_mp_summary
     }
