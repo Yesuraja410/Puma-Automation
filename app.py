@@ -92,9 +92,15 @@ def _write_report(sheets, fname):
     """Write report to persistent directory. Returns file path."""
     fpath = os.path.join(REPORT_DIR, fname)
     with pd.ExcelWriter(fpath, engine="xlsxwriter", engine_kwargs={"options": {"constant_memory": True}}) as writer:
-        for sheet_name, df in sheets.items():
+        for sheet_name in list(sheets.keys()):
+            df = sheets[sheet_name]
             if not df.empty:
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
+            # Free memory of this sheet immediately after writing
+            sheets[sheet_name] = pd.DataFrame()
+            del df
+            import gc
+            gc.collect()
     return fpath
 
 
@@ -102,8 +108,14 @@ def _write_qc_report(sheets, fname):
     """Write QC audit report to persistent directory. Returns file path."""
     fpath = os.path.join(REPORT_DIR, fname)
     with pd.ExcelWriter(fpath, engine="xlsxwriter", engine_kwargs={"options": {"constant_memory": True}}) as writer:
-        for sheet_name, df in sheets.items():
+        for sheet_name in list(sheets.keys()):
+            df = sheets[sheet_name]
             df.to_excel(writer, sheet_name=sheet_name, index=False)
+            # Free memory of this sheet immediately after writing
+            sheets[sheet_name] = pd.DataFrame()
+            del df
+            import gc
+            gc.collect()
     return fpath
 
 
@@ -484,6 +496,14 @@ if task == "Status Validation":
                     temp_pi = pi[pi_cols].rename(columns={"SellerSku": "Seller SKU"})
                     sr_parts.append(temp_pi)
                 sr = pd.concat(sr_parts, ignore_index=True) if sr_parts else pd.DataFrame()
+                
+                # Generate filename before freeing raw data
+                fname = _make_filename(data, country)
+                
+                # Aggressively delete raw data dictionary to reclaim hundreds of MBs of RAM
+                del data
+                gc.collect()
+                
             except Exception as e:
                 st.error("Validation error: " + str(e))
                 st.exception(e)
@@ -491,7 +511,6 @@ if task == "Status Validation":
 
         with st.spinner("Saving report to disk..."):
             try:
-                fname  = _make_filename(data, country)
                 sheets = {}
                 if not sk.empty: sheets["SKU Level Validation"] = sk
                 if not pi.empty: sheets["PID Level Validation"] = pi
@@ -501,14 +520,14 @@ if task == "Status Validation":
                     st.session_state["report_path"]  = fpath
                     st.session_state["report_fname"] = fname
                     st.session_state["sr_preview"]   = sr.head(500) if not sr.empty else pd.DataFrame()
-                    st.session_state["sk_preview"]   = sk.head(500)
-                    st.session_state["pi_preview"]   = pi.head(500)
+                    st.session_state["sk_preview"]   = sk.head(500) if not sk.empty else pd.DataFrame()
+                    st.session_state["pi_preview"]   = pi.head(500) if not pi.empty else pd.DataFrame()
                     st.session_state["sr_len"]       = len(sr)
                     st.session_state["sk_len"]       = len(sk)
                     st.session_state["pi_len"]       = len(pi)
                     st.session_state["country"]      = country
                     # Free large DataFrames from memory immediately
-                    del sr, sk, pi, data
+                    del sr, sk, pi, sheets
                     gc.collect()
                     st.success("Validation complete! Report saved.")
                 else:
