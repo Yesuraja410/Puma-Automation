@@ -91,31 +91,19 @@ def _make_filename(data, country):
 def _write_report(sheets, fname):
     """Write report to persistent directory. Returns file path."""
     fpath = os.path.join(REPORT_DIR, fname)
-    with pd.ExcelWriter(fpath, engine="xlsxwriter", engine_kwargs={"options": {"constant_memory": True}}) as writer:
-        for sheet_name in list(sheets.keys()):
-            df = sheets[sheet_name]
+    with pd.ExcelWriter(fpath, engine="xlsxwriter") as writer:
+        for sheet_name, df in sheets.items():
             if not df.empty:
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
-            # Free memory of this sheet immediately after writing
-            sheets[sheet_name] = pd.DataFrame()
-            del df
-            import gc
-            gc.collect()
     return fpath
 
 
 def _write_qc_report(sheets, fname):
     """Write QC audit report to persistent directory. Returns file path."""
     fpath = os.path.join(REPORT_DIR, fname)
-    with pd.ExcelWriter(fpath, engine="xlsxwriter", engine_kwargs={"options": {"constant_memory": True}}) as writer:
-        for sheet_name in list(sheets.keys()):
-            df = sheets[sheet_name]
+    with pd.ExcelWriter(fpath, engine="xlsxwriter") as writer:
+        for sheet_name, df in sheets.items():
             df.to_excel(writer, sheet_name=sheet_name, index=False)
-            # Free memory of this sheet immediately after writing
-            sheets[sheet_name] = pd.DataFrame()
-            del df
-            import gc
-            gc.collect()
     return fpath
 
 
@@ -1130,7 +1118,7 @@ elif task == "Order & OMS Validation":
                 # Download Section
                 st.markdown("#### Download Report")
                 excel_buffer = io.BytesIO()
-                with pd.ExcelWriter(excel_buffer, engine="xlsxwriter", engine_kwargs={"options": {"constant_memory": True}}) as writer:
+                with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
                     enriched_df.to_excel(writer, sheet_name="Enriched Pending Orders", index=False)
                     if not disc_df.empty:
                         disc_df.to_excel(writer, sheet_name="Status Discrepancies", index=False)
