@@ -88,7 +88,7 @@ def run_local_validation():
         fname = f"Shopee_PH_Status_Validation_Report_{today}_Local.xlsx"
         fpath = os.path.join(output_dir, fname)
         
-        with pd.ExcelWriter(fpath, engine="xlsxwriter", engine_kwargs={"options": {"constant_memory": True}}) as writer:
+        with pd.ExcelWriter(fpath, engine="xlsxwriter") as writer:
             if not sk.empty:
                 sk.to_excel(writer, sheet_name="SKU Validation", index=False)
                 print(f"   * Wrote {len(sk)} rows to 'SKU Validation' sheet.")
