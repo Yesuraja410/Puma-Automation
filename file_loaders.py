@@ -20,21 +20,37 @@ def _read_file(file, header_row=0, skiprows=None):
     if file is None:
         return pd.DataFrame()
     name = file.name.lower()
-    raw  = file.read()
     file.seek(0)
     try:
         if name.endswith(".csv"):
-            return pd.read_csv(io.BytesIO(raw), header=header_row,
-                               skiprows=skiprows, dtype=str)
+            df = pd.read_csv(file, header=header_row,
+                             skiprows=skiprows, dtype=str)
+            file.seek(0)
+            return df
         try:
             import python_calamine
-            return pd.read_excel(io.BytesIO(raw), header=header_row,
-                                 skiprows=skiprows, dtype=str, engine="calamine")
+            df = pd.read_excel(file, header=header_row,
+                               skiprows=skiprows, dtype=str, engine="calamine")
+            file.seek(0)
+            return df
         except ImportError:
-            return pd.read_excel(io.BytesIO(raw), header=header_row,
-                                 skiprows=skiprows, dtype=str)
+            df = pd.read_excel(file, header=header_row,
+                               skiprows=skiprows, dtype=str)
+            file.seek(0)
+            return df
     except Exception:
-        return pd.DataFrame()
+        try:
+            file.seek(0)
+            raw = file.read()
+            file.seek(0)
+            if name.endswith(".csv"):
+                return pd.read_csv(io.BytesIO(raw), header=header_row,
+                                   skiprows=skiprows, dtype=str)
+            else:
+                return pd.read_excel(io.BytesIO(raw), header=header_row,
+                                     skiprows=skiprows, dtype=str)
+        except Exception:
+            return pd.DataFrame()
 
 
 def _read_zip(file, header_row=0, skiprows=None):
@@ -125,7 +141,9 @@ def load_lazada(file, country):
         df["MP Stock"] = pd.to_numeric(
             df["MP Stock"].apply(_safe_str), errors="coerce"
         ).fillna(0)
-    return df
+    # Slice only needed columns to keep memory low
+    keep_cols = [c for c in ["SKU", "MP Stock", "MP Status", "Marketplace"] if c in df.columns]
+    return df[keep_cols].copy()
 
 
 # ── Shopee ────────────────────────────────────────────────────────────────────
@@ -381,7 +399,9 @@ def load_shopee_stock(file, country):
     else:
         df["MP Stock"] = 0.0
 
-    return df
+    # Slice only needed columns to keep memory low
+    keep_cols = [c for c in ["SKU", "Product ID", "MP Stock", "Marketplace"] if c in df.columns]
+    return df[keep_cols].copy()
 
 
 def load_shopee_status(file, country):
@@ -462,7 +482,9 @@ def load_shopee_status(file, country):
         df["SKU"] = ""
 
     df["Marketplace"] = "Shopee " + country
-    return df.reset_index(drop=True)
+    # Slice only needed columns to keep memory low
+    keep_cols = [c for c in ["SKU", "Product ID", "MP Status", "Marketplace"] if c in df.columns]
+    return df[keep_cols].copy()
 
 
 def load_zalora_stock(file, country):
@@ -502,7 +524,9 @@ def load_zalora_stock(file, country):
         ).fillna(0)
     else:
         df["MP Stock"] = 0.0
-    return df
+    # Slice only needed columns to keep memory low
+    keep_cols = [c for c in ["SKU", "MP Stock", "Marketplace"] if c in df.columns]
+    return df[keep_cols].copy()
 
 
 def load_zalora_status(file, country):
@@ -544,7 +568,10 @@ def load_zalora_status(file, country):
         df["MP Status"] = "Unknown"
     df["SKU"] = df["SKU"].apply(_clean_sku)
     df["Marketplace"] = "Zalora " + country
-    return df[df["SKU"] != ""].copy()
+    df = df[df["SKU"] != ""].copy()
+    # Slice only needed columns to keep memory low
+    keep_cols = [c for c in ["SKU", "MP Status", "Marketplace"] if c in df.columns]
+    return df[keep_cols].copy()
 
 
 # ── TikTok MY ─────────────────────────────────────────────────────────────────
@@ -656,7 +683,9 @@ def load_content(file):
         df["SKU"] = df["SKU"].apply(_clean_sku)
     if "Article No" in df.columns:
         df["Article No"] = df["Article No"].apply(_safe_str)
-    return df
+    # Slice only needed columns to keep memory low
+    keep_cols = [c for c in ["SKU", "Article No"] if c in df.columns]
+    return df[keep_cols].copy()
 
 
 # ── TC Inventory ──────────────────────────────────────────────────────────────
@@ -976,7 +1005,11 @@ def load_zecom(file, country="PH"):
                 )
                 break
 
-    return df
+    # Slice only needed columns to keep memory low
+    ecom_cols = [c for c in df.columns if c.startswith("Ecom_")]
+    keep_cols = ["Article No", "Launch Date", "Future Launch"] + ecom_cols
+    keep_cols = [c for c in keep_cols if c in df.columns]
+    return df[keep_cols].copy()
 
 
 # ── Exclusion List ────────────────────────────────────────────────────────────
@@ -1145,7 +1178,10 @@ def load_all_file(file, country):
             ).fillna(0)
         else:
             df[num_col] = 0.0
-    return df[df["SKU"] != ""].copy()
+    df = df[df["SKU"] != ""].copy()
+    # Slice only needed columns to keep memory low
+    keep_cols = [c for c in ["SKU", "TC Stock", "Reserved Stock"] if c in df.columns]
+    return df[keep_cols].copy()
 
 
 # ── Master loader ─────────────────────────────────────────────────────────────
