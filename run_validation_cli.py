@@ -13,8 +13,8 @@ class LocalFileWrapper:
         self.name = os.path.basename(filepath)
         self.file_obj = open(filepath, 'rb')
         
-    def read(self):
-        return self.file_obj.read()
+    def read(self, size=-1):
+        return self.file_obj.read(size)
         
     def seek(self, offset):
         self.file_obj.seek(offset)
