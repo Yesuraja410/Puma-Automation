@@ -1,0 +1,18 @@
+{
+  "mcp_url": "https://mcp.graas.ai/mcp/GED",
+  "token_url": "https://mcp.graas.ai/token",
+  "refresh_token": "YOUR_REFRESH_TOKEN",
+  "client_id": "YOUR_CLIENT_ID",
+  "smtp_host": "smtp.office365.com",
+  "smtp_port": 587,
+  "smtp_user": "YOUR_SMTP_USER",
+  "smtp_password": "YOUR_SMTP_PASSWORD",
+  "smtp_sender_email": "YOUR_SMTP_SENDER_EMAIL",
+  "smtp_use_tls": true,
+  "seller_email": "seller_ged@example.com",
+  "queries": {
+    "pending": "SELECT * FROM store_pending_orders WHERE store_code = 'GED' AND date = CURRENT_DATE()",
+    "tc": "SELECT * FROM tc_transactions WHERE store_code = 'GED' AND date >= DATEADD(day, -7, CURRENT_DATE())",
+    "oms": "SELECT * FROM oms_sales_orders WHERE store_code = 'GED' AND date >= DATEADD(day, -7, CURRENT_DATE())"
+  }
+}
