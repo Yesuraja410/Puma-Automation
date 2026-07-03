@@ -4,7 +4,6 @@ import zipfile
 import urllib.parse
 import pandas as pd
 import numpy as np
-import streamlit as st
 
 # Synonyms for auto-mapping columns
 COLUMN_SYNONYMS = {
@@ -143,7 +142,7 @@ def parse_google_sheets_url(url: str) -> str:
                     gid = gid_match.group(1)
         return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=csv&gid={gid}"
     except Exception as e:
-        st.error(f"Error parsing Google Sheets URL: {e}")
+        print(f"Error parsing Google Sheets URL: {e}")
         return url
 
 # ── General File Reader ───────────────────────────────────────────────────────
@@ -225,13 +224,36 @@ def load_excel_all_sheets(file_or_path, channel: str = None) -> dict:
         sheet_dfs = {}
         h, s = get_parse_params(channel)
         
-        sheet_names_to_parse = xl.sheet_names
+        sheet_names_to_parse = []
         if channel:
             channel_lower = channel.lower()
             if "zalora" in channel_lower:
                 sheet_names_to_parse = [name for name in xl.sheet_names if name.strip().lower() == "upload template"]
+                if not sheet_names_to_parse:
+                    sheet_names_to_parse = [name for name in xl.sheet_names if name.strip().lower() == "template"]
             elif "tiktok" in channel_lower:
                 sheet_names_to_parse = [name for name in xl.sheet_names if name.strip().lower() == "template"]
+                if not sheet_names_to_parse:
+                    sheet_names_to_parse = [name for name in xl.sheet_names if name.strip().lower() == "upload template"]
+                
+        # Robust fallback: if sheet_names_to_parse is empty or none of those sheets exist in the file
+        if not sheet_names_to_parse or not any(name in xl.sheet_names for name in sheet_names_to_parse):
+            # Check for common listing template sheet names
+            common_names = ["upload template", "template", "sheet1", "listings", "listing"]
+            sheet_names_to_parse = [name for name in xl.sheet_names if name.strip().lower() in common_names]
+            
+            # If still empty, exclude known helper/instruction sheets
+            if not sheet_names_to_parse:
+                helpers = {
+                    "instruction", "instructions", "example", "examples", "hiddenstyle", "hiddenattr", 
+                    "category", "brand", "shippinginsurance", "condition", "specialproductlistingtype", 
+                    "templateconfig", "unavailable categories", "readme", "read me", "read_me", "config"
+                }
+                sheet_names_to_parse = [name for name in xl.sheet_names if name.strip().lower() not in helpers]
+            
+            # If still empty, use all sheets in the file
+            if not sheet_names_to_parse:
+                sheet_names_to_parse = xl.sheet_names
                 
         for s_name in sheet_names_to_parse:
             df = pd.DataFrame()
