@@ -103,6 +103,26 @@ def _normalise_cols(df):
     df.columns = [_safe_str(c) for c in df.columns]
     return df
 
+def compute_excel_row_numbers(num_rows, header_row=0, skiprows=None):
+    skipped = set()
+    if isinstance(skiprows, list):
+        skipped = set(skiprows)
+    elif isinstance(skiprows, int):
+        skipped = set(range(skiprows))
+        
+    kept_indices = []
+    file_idx = 0
+    needed = (header_row + 1 + num_rows) * 2
+    while len(kept_indices) < needed:
+        if file_idx not in skipped:
+            kept_indices.append(file_idx)
+        file_idx += 1
+        
+    header_file_idx = kept_indices[header_row]
+    data_file_indices = kept_indices[header_row + 1 : header_row + 1 + num_rows]
+    
+    return [idx + 1 for idx in data_file_indices]
+
 def _normalise_article_no(val):
     s = _safe_str(val)
     if not s:
@@ -200,7 +220,11 @@ def load_file_to_df(file_or_path, filename: str = None, channel: str = None) -> 
     if df.empty or not any(c.lower() in [col.lower() for col in df.columns] for c in check_cols):
         df_normal = _read_file(file_or_path, header_row=0, skiprows=None)
         if not df_normal.empty:
+            df_normal["_excel_row"] = compute_excel_row_numbers(len(df_normal), 0, None)
             return df_normal
+    else:
+        if not df.empty:
+            df["_excel_row"] = compute_excel_row_numbers(len(df), h, s)
     return df
 
 def load_excel_all_sheets(file_or_path, channel: str = None) -> dict:
@@ -257,6 +281,7 @@ def load_excel_all_sheets(file_or_path, channel: str = None) -> dict:
                 
         for s_name in sheet_names_to_parse:
             df = pd.DataFrame()
+            is_fallback = False
             try:
                 df = xl.parse(s_name, header=h, skiprows=s, dtype=str)
                 check_cols = ["Seller SKU", "SKU", "SellerSKU", "Product Name", "Variation 1"]
@@ -268,12 +293,18 @@ def load_excel_all_sheets(file_or_path, channel: str = None) -> dict:
                         check_cols.extend(["seller sku", "product name", "primary variation value (option)", "secondary variation value (option)"])
                 if df.empty or not any(c.lower() in [col.lower() for col in df.columns] for c in check_cols):
                     df = xl.parse(s_name, dtype=str)
+                    is_fallback = True
             except Exception:
                 try:
                     df = xl.parse(s_name, dtype=str)
+                    is_fallback = True
                 except Exception:
                     pass
             if not df.empty:
+                if is_fallback:
+                    df["_excel_row"] = compute_excel_row_numbers(len(df), 0, None)
+                else:
+                    df["_excel_row"] = compute_excel_row_numbers(len(df), h, s)
                 sheet_dfs[s_name] = df
         return sheet_dfs
     except Exception:
@@ -295,7 +326,11 @@ def load_google_sheet(url: str, channel: str = None) -> pd.DataFrame:
     if df.empty or not any(c.lower() in [col.lower() for col in df.columns] for c in check_cols):
         df_normal = pd.read_csv(csv_url, dtype=str)
         if not df_normal.empty:
+            df_normal["_excel_row"] = compute_excel_row_numbers(len(df_normal), 0, None)
             return df_normal
+    else:
+        if not df.empty:
+            df["_excel_row"] = compute_excel_row_numbers(len(df), h, s)
     return df
 
 def _read_zip(file, header_row=0, skiprows=None):
@@ -1049,9 +1084,43 @@ def auto_map_columns(columns: list) -> dict:
             
     return mapping
 
+def _clean_target_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+        
+    def is_helper_value(val):
+        s = _safe_str(val).strip().lower()
+        if s in ["mandatory", "optional", "n/a"]:
+            return True
+        if s.startswith(("select the", "select a", "product name must be", "provide a detailed", "add the url", "add the urls", "please select")):
+            return True
+        return False
+
+    rows_to_drop = []
+    for idx in range(min(5, len(df))):
+        row = df.iloc[idx]
+        for col in ["product_name", "category", "brand", "price", "quantity"]:
+            if col in df.columns and is_helper_value(row[col]):
+                rows_to_drop.append(df.index[idx])
+                break
+                
+    if len(rows_to_drop) >= 2:
+        next_idx = len(rows_to_drop)
+        if next_idx < len(df):
+            rows_to_drop.append(df.index[next_idx])
+            
+    if rows_to_drop:
+        df = df.drop(index=rows_to_drop).reset_index(drop=True)
+        
+    return df
+
 def standardize_dataframe(df: pd.DataFrame, mapping: dict, source_name: str = "Uploaded File") -> pd.DataFrame:
     standard_df = pd.DataFrame()
-    standard_df["_original_row_number"] = df.index + 2
+    if "_excel_row" in df.columns:
+        standard_df["_original_row_number"] = df["_excel_row"]
+    else:
+        standard_df["_original_row_number"] = df.index + 2
+        
     standard_df["_source_file"] = [source_name] * len(df)
     
     for canonical, file_col in mapping.items():
@@ -1063,6 +1132,8 @@ def standardize_dataframe(df: pd.DataFrame, mapping: dict, source_name: str = "U
         else:
             standard_df[canonical] = pd.NA
             
+    # Clean helper/example rows
+    standard_df = _clean_target_df(standard_df)
     return standard_df
 
 from typing import Tuple
