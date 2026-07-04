@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PUMA Automation Suite</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    
+    <!-- Top Header -->
+    <header class="main-header">
+        <div class="logo-area">
+            <span class="logo-text">PUMA AUTOMATION</span>
+            <span class="badge">Vercel Serverless</span>
+        </div>
+        <div class="header-status">
+            <span class="status-indicator online"></span>
+            <span class="status-text">Backend Connected</span>
+        </div>
+    </header>
+
+    <!-- App Container -->
+    <div class="app-container">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-section-title">Navigation</div>
+            <nav class="nav-tabs">
+                <button class="nav-btn active" data-tab="status-validation-tab">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Status Validation & QC</span>
+                </button>
+                <button class="nav-btn" data-tab="order-validation-tab">
+                    <i class="fa-solid fa-envelope-open-text"></i>
+                    <span>Order & OMS Validation</span>
+                </button>
+                <button class="nav-btn" data-tab="listing-qc-tab">
+                    <i class="fa-solid fa-clipboard-check"></i>
+                    <span>Listing QC Validator</span>
+                </button>
+            </nav>
+            
+            <!-- Sidebar configs contextually inserted by JS -->
+            <div class="sidebar-context" id="sidebar-context-area">
+                <!-- Status Validation Sidebar Config -->
+                <div class="context-panel" id="status-validation-config">
+                    <div class="sidebar-section-title">Configuration</div>
+                    <div class="form-group">
+                        <label for="status-country">Select Country</label>
+                        <select id="status-country" class="form-select">
+                            <option value="SG">Singapore (SG)</option>
+                            <option value="MY">Malaysia (MY)</option>
+                            <option value="PH">Philippines (PH)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Order Validation Sidebar Config -->
+                <div class="context-panel hidden" id="order-validation-config">
+                    <div class="sidebar-section-title">Configuration</div>
+                    <div class="form-group">
+                        <label>SLA Report Source</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="pending_source" value="Upload File" checked>
+                                <span>Upload File</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="pending_source" value="Google Sheet Link">
+                                <span>Google Sheet URL</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group hidden" id="gsheet-url-group">
+                        <label for="order-gsheet-url">Google Sheet URL</label>
+                        <input type="text" id="order-gsheet-url" class="form-input" placeholder="https://docs.google.com/spreadsheets/d/...">
+                    </div>
+                </div>
+
+                <!-- Listing QC Sidebar Config -->
+                <div class="context-panel hidden" id="listing-qc-config">
+                    <div class="sidebar-section-title">Configuration</div>
+                    <div class="form-group">
+                        <label for="lqc-channel">Marketplace Channel</label>
+                        <select id="lqc-channel" class="form-select">
+                            <option value="Shopee PH">Shopee PH</option>
+                            <option value="Lazada SG">Lazada SG</option>
+                            <option value="Lazada MY">Lazada MY</option>
+                            <option value="Lazada PH">Lazada PH</option>
+                            <option value="Shopee SG">Shopee SG</option>
+                            <option value="Shopee MY">Shopee MY</option>
+                            <option value="Zalora SG">Zalora SG</option>
+                            <option value="Zalora MY">Zalora MY</option>
+                            <option value="Zalora PH">Zalora PH</option>
+                            <option value="TikTok MY">TikTok MY</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="lqc-stage">QC Process Stage</label>
+                        <select id="lqc-stage" class="form-select">
+                            <option value="Internal QC">Internal QC</option>
+                            <option value="Post QC">Post QC</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Display Content Area -->
+        <main class="main-content">
+            
+            <!-- ================= STATUS VALIDATION TAB ================= -->
+            <section class="tab-content" id="status-validation-tab">
+                <div class="page-header">
+                    <h1>Status Validation & QC</h1>
+                    <p>Validate marketplace SKU statuses, stock counts, and cross-reference with working sheets.</p>
+                </div>
+                
+                <div class="card-grid">
+                    <!-- Column 1: File Uploaders -->
+                    <div class="glass-card">
+                        <h2 class="card-title"><i class="fa-solid fa-file-arrow-up"></i> Upload Data Files</h2>
+                        <form id="status-val-form" class="upload-form">
+                            <!-- Lazada -->
+                            <div class="file-uploader-box">
+                                <label class="file-label">Lazada File (Excel/CSV)</label>
+                                <input type="file" id="sv-laz" class="file-input">
+                            </div>
+                            
+                            <!-- Shopee -->
+                            <div class="file-uploader-grid">
+                                <div class="file-uploader-box">
+                                    <label class="file-label">Shopee Stock (ZIP/Excel)</label>
+                                    <input type="file" id="sv-sh-stk" class="file-input">
+                                </div>
+                                <div class="file-uploader-box">
+                                    <label class="file-label">Shopee Status (ZIP/Excel)</label>
+                                    <input type="file" id="sv-sh-sts" class="file-input">
+                                </div>
+                            </div>
+
+                            <!-- Zalora -->
+                            <div class="file-uploader-grid">
+                                <div class="file-uploader-box">
+                                    <label class="file-label">Zalora Stock (Excel)</label>
+                                    <input type="file" id="sv-zal-stk" class="file-input">
+                                </div>
+                                <div class="file-uploader-box">
+                                    <label class="file-label">Zalora Status (Excel)</label>
+                                    <input type="file" id="sv-zal-sts" class="file-input">
+                                </div>
+                            </div>
+
+                            <!-- TikTok (Only displayed if MY selected, handled by JS) -->
+                            <div class="file-uploader-grid hidden" id="sv-tiktok-uploaders">
+                                <div class="file-uploader-box">
+                                    <label class="file-label">TikTok Active (Excel)</label>
+                                    <input type="file" id="sv-tt-act" class="file-input">
+                                </div>
+                                <div class="file-uploader-box">
+                                    <label class="file-label">TikTok Inactive (Excel)</label>
+                                    <input type="file" id="sv-tt-ina" class="file-input">
+                                </div>
+                            </div>
+
+                            <!-- Reference Files -->
+                            <h3 class="section-subtitle">Reference Files</h3>
+                            <div class="file-uploader-grid">
+                                <div class="file-uploader-box">
+                                    <label class="file-label">Content File</label>
+                                    <input type="file" id="sv-cnt" class="file-input">
+                                </div>
+                                <div class="file-uploader-box">
+                                    <label class="file-label">TC Inventory</label>
+                                    <input type="file" id="sv-tc" class="file-input">
+                                </div>
+                            </div>
+                            <div class="file-uploader-grid">
+                                <div class="file-uploader-box">
+                                    <label class="file-label">zEcom File</label>
+                                    <input type="file" id="sv-zec" class="file-input">
+                                </div>
+                                <div class="file-uploader-box">
+                                    <label class="file-label">ALL File</label>
+                                    <input type="file" id="sv-alf" class="file-input">
+                                </div>
+                            </div>
+                            <div class="file-uploader-grid">
+                                <div class="file-uploader-box">
+                                    <label class="file-label">Exclusion File (Optional)</label>
+                                    <input type="file" id="sv-excl" class="file-input">
+                                </div>
+                                <div class="file-uploader-box">
+                                    <label class="file-label">Team Working Sheet (QC Only)</label>
+                                    <input type="file" id="sv-working" class="file-input">
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="action-btn-row">
+                                <button type="button" id="sv-run-validation-btn" class="btn primary-btn"><i class="fa-solid fa-play"></i> Run Validation</button>
+                                <button type="button" id="sv-run-qc-btn" class="btn secondary-btn"><i class="fa-solid fa-magnifying-glass-chart"></i> Run QC Audit</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Column 2: Dashboard Results -->
+                    <div class="glass-card flex-column">
+                        <h2 class="card-title"><i class="fa-solid fa-gauge-high"></i> Execution Metrics</h2>
+                        
+                        <!-- Initial Info -->
+                        <div id="sv-initial-info" class="empty-state">
+                            <i class="fa-solid fa-folder-open empty-icon"></i>
+                            <p>Upload files and click **Run Validation** or **Run QC Audit** to view metrics and download spreadsheets.</p>
+                        </div>
+
+                        <!-- Loading Indicator -->
+                        <div id="sv-loading" class="loading-state hidden">
+                            <div class="spinner"></div>
+                            <p id="sv-loading-msg">Processing data and generating report...</p>
+                            <span class="warning-tip">Takes up to 15s depending on file sizes.</span>
+                        </div>
+
+                        <!-- Metrics Content (Status Validation) -->
+                        <div id="sv-metrics-results" class="hidden">
+                            <div class="metrics-grid">
+                                <div class="metric-card metric-total">
+                                    <div class="metric-title">Total SKUs Checked</div>
+                                    <div class="metric-value" id="sv-val-total">0</div>
+                                </div>
+                                <div class="metric-card metric-passed">
+                                    <div class="metric-title">Active SKUs</div>
+                                    <div class="metric-value" id="sv-val-active">0</div>
+                                </div>
+                                <div class="metric-card metric-mismatch">
+                                    <div class="metric-title">Inactive SKUs</div>
+                                    <div class="metric-value" id="sv-val-inactive">0</div>
+                                </div>
+                                <div class="metric-card metric-warnings">
+                                    <div class="metric-title">True Checks</div>
+                                    <div class="metric-value" id="sv-val-true">0</div>
+                                </div>
+                            </div>
+                            
+                            <div class="download-box">
+                                <h3 class="box-title">Validation Output Ready</h3>
+                                <button id="sv-download-report-btn" class="btn download-btn"><i class="fa-solid fa-file-excel"></i> Download Excel Report</button>
+                            </div>
+                            
+                            <h3 class="section-subtitle">Dataset Preview (First 15 Rows)</h3>
+                            <div class="table-container">
+                                <table class="data-table" id="sv-preview-table">
+                                    <!-- Populated by JS -->
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Metrics Content (QC Audit) -->
+                        <div id="sv-qc-results" class="hidden">
+                            <div class="metrics-grid">
+                                <div class="metric-card metric-total">
+                                    <div class="metric-title">Rows Audited</div>
+                                    <div class="metric-value" id="sv-qc-total">0</div>
+                                </div>
+                                <div class="metric-card metric-mismatch">
+                                    <div class="metric-title">Mismatches</div>
+                                    <div class="metric-value" id="sv-qc-mismatch">0</div>
+                                </div>
+                                <div class="metric-card metric-warnings">
+                                    <div class="metric-title">Missing Rows</div>
+                                    <div class="metric-value" id="sv-qc-missing">0</div>
+                                </div>
+                                <div class="metric-card metric-passed">
+                                    <div class="metric-title">Extra Rows</div>
+                                    <div class="metric-value" id="sv-qc-extra">0</div>
+                                </div>
+                            </div>
+
+                            <div class="download-box">
+                                <h3 class="box-title">QC Audit Report Output</h3>
+                                <button id="sv-download-qc-btn" class="btn download-btn"><i class="fa-solid fa-file-excel"></i> Download QC Audit Report</button>
+                            </div>
+
+                            <div id="qc-alert-area"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= ORDER & OMS VALIDATION TAB ================= -->
+            <section class="tab-content hidden" id="order-validation-tab">
+                <div class="page-header">
+                    <h1>Order Pending SLA & OMS Validation</h1>
+                    <p>Cross-check daily SLA reports against TC Inventory and OMS Sales files. Email discrepancies directly to sellers.</p>
+                </div>
+
+                <div class="card-grid">
+                    <!-- Form inputs -->
+                    <div class="glass-card">
+                        <h2 class="card-title"><i class="fa-solid fa-file-invoice"></i> Upload Reports</h2>
+                        <form id="order-val-form" class="upload-form">
+                            <!-- Pending order SLA -->
+                            <div class="file-uploader-box" id="order-pending-file-group">
+                                <label class="file-label">1. Pending Order Report (SLA)</label>
+                                <input type="file" id="ov-pending" class="file-input">
+                            </div>
+
+                            <div class="file-uploader-box">
+                                <label class="file-label">2. TC Report (All File)</label>
+                                <input type="file" id="ov-tc" class="file-input">
+                            </div>
+
+                            <div class="file-uploader-box">
+                                <label class="file-label">3. OMS Report (Sales Order File)</label>
+                                <input type="file" id="ov-oms" class="file-input">
+                            </div>
+
+                            <div class="file-uploader-box">
+                                <label class="file-label">4. Seller Contact List (Optional)</label>
+                                <input type="file" id="ov-contacts" class="file-input">
+                            </div>
+
+                            <!-- Run button -->
+                            <button type="button" id="ov-run-btn" class="btn primary-btn full-width"><i class="fa-solid fa-play"></i> Run Order Validation</button>
+                            
+                            <!-- SMTP Expandable Details -->
+                            <div class="smtp-collapsible">
+                                <div class="smtp-header" id="smtp-toggle">
+                                    <span><i class="fa-solid fa-envelope"></i> SMTP Mail Server Settings</span>
+                                    <i class="fa-solid fa-chevron-down arrow"></i>
+                                </div>
+                                <div class="smtp-body hidden" id="smtp-body-area">
+                                    <div class="form-group-grid">
+                                        <div class="form-group">
+                                            <label for="smtp-host">SMTP Host</label>
+                                            <input type="text" id="smtp-host" class="form-input" placeholder="smtp.gmail.com">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="smtp-port">Port</label>
+                                            <input type="number" id="smtp-port" class="form-input" value="587">
+                                        </div>
+                                    </div>
+                                    <div class="form-group-grid">
+                                        <div class="form-group">
+                                            <label for="smtp-user">Username (Email)</label>
+                                            <input type="email" id="smtp-user" class="form-input" placeholder="user@gmail.com">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="smtp-pass">Password</label>
+                                            <input type="password" id="smtp-pass" class="form-input" placeholder="••••••••••••">
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="smtp-sender">Sender Email</label>
+                                        <input type="email" id="smtp-sender" class="form-input" placeholder="sender@gmail.com">
+                                    </div>
+                                    <div class="form-group checkbox-row">
+                                        <input type="checkbox" id="smtp-tls" checked>
+                                        <label for="smtp-tls">Use TLS Connection</label>
+                                    </div>
+                                    <button type="button" id="smtp-test-btn" class="btn secondary-btn full-width">Test Connection</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Metrics and Actions -->
+                    <div class="glass-card flex-column">
+                        <h2 class="card-title"><i class="fa-solid fa-square-poll-vertical"></i> Validation Dashboard</h2>
+
+                        <!-- Initial Info -->
+                        <div id="ov-initial-info" class="empty-state">
+                            <i class="fa-solid fa-envelope-open empty-icon"></i>
+                            <p>Upload files and click **Run Order Validation** to generate discrepancy reports and email tools.</p>
+                        </div>
+
+                        <!-- Loading -->
+                        <div id="ov-loading" class="loading-state hidden">
+                            <div class="spinner"></div>
+                            <p>Matching order IDs and syncing reports...</p>
+                        </div>
+
+                        <!-- Results Dashboard -->
+                        <div id="ov-results-area" class="hidden">
+                            <div class="metrics-grid metrics-5">
+                                <div class="metric-card metric-total">
+                                    <div class="metric-title">Pending Orders</div>
+                                    <div class="metric-value" id="ov-total">0</div>
+                                </div>
+                                <div class="metric-card metric-passed">
+                                    <div class="metric-title">Pushed (OMS)</div>
+                                    <div class="metric-value" id="ov-pushed">0</div>
+                                </div>
+                                <div class="metric-card metric-mismatch">
+                                    <div class="metric-title">Not Pushed</div>
+                                    <div class="metric-value" id="ov-notpushed">0</div>
+                                </div>
+                                <div class="metric-card metric-warnings">
+                                    <div class="metric-title">Unpaid</div>
+                                    <div class="metric-value" id="ov-unpaid">0</div>
+                                </div>
+                                <div class="metric-card metric-mismatch border-red">
+                                    <div class="metric-title">Discrepancies</div>
+                                    <div class="metric-value text-red" id="ov-disc">0</div>
+                                </div>
+                            </div>
+
+                            <div class="download-box">
+                                <h3 class="box-title">Order Enrichment Excel Ready</h3>
+                                <button id="ov-download-btn" class="btn download-btn"><i class="fa-solid fa-file-excel"></i> Download Excel Validation File</button>
+                            </div>
+
+                            <!-- Discrepancies Table -->
+                            <h3 class="section-subtitle">OMS Discrepancies Preview</h3>
+                            <div class="table-container small-height">
+                                <table class="data-table" id="ov-disc-table">
+                                    <!-- JS populated -->
+                                </table>
+                            </div>
+
+                            <!-- Seller Email Panel -->
+                            <h3 class="section-subtitle"><i class="fa-solid fa-share-nodes"></i> Seller Email Communication</h3>
+                            <div class="email-control-header">
+                                <button id="email-all-btn" class="btn secondary-btn"><i class="fa-solid fa-paper-plane"></i> Email All Sellers</button>
+                            </div>
+                            <div class="seller-list" id="seller-list-area">
+                                <!-- JS items -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= LISTING QC TAB ================= -->
+            <section class="tab-content hidden" id="listing-qc-tab">
+                <div class="page-header">
+                    <h1>Listing QC Validator</h1>
+                    <p>Automated pre-listing quality checks and post-listing store sync analysis.</p>
+                </div>
+
+                <div class="card-grid">
+                    <!-- Files configuration -->
+                    <div class="glass-card">
+                        <h2 class="card-title"><i class="fa-solid fa-list-check"></i> QC Parameters</h2>
+                        <form id="lqc-form" class="upload-form">
+                            
+                            <h3 class="section-subtitle">Reference Files</h3>
+                            <div class="file-uploader-box">
+                                <label class="file-label">Upload Content File (EAN/Size Refs)</label>
+                                <input type="file" id="lqc-ref-content" class="file-input">
+                            </div>
+                            <div class="file-uploader-box">
+                                <label class="file-label">Upload zEcom File (Ecom Status/Price Refs)</label>
+                                <input type="file" id="lqc-ref-zecom" class="file-input">
+                            </div>
+
+                            <h3 class="section-subtitle">Target Sheets</h3>
+                            <div class="file-uploader-box">
+                                <label class="file-label">Upload Target Listing Sheets (Multifile)</label>
+                                <input type="file" id="lqc-targets" class="file-input" multiple>
+                            </div>
+
+                            <!-- Gsheet Links -->
+                            <div class="form-group">
+                                <label for="lqc-gsheets">Google Sheet URL Inputs (One per line)</label>
+                                <textarea id="lqc-gsheets" class="form-input textarea-small" placeholder="https://docs.google.com/spreadsheets/d/..."></textarea>
+                            </div>
+
+                            <!-- Post QC specific fields -->
+                            <div id="lqc-post-qc-files" class="hidden">
+                                <h3 class="section-subtitle">Post QC Live Marketplace Reports</h3>
+                                <div class="file-uploader-box">
+                                    <label class="file-label">Upload Live Reports (ZIP/Excel)</label>
+                                    <input type="file" id="lqc-live-reports" class="file-input" multiple>
+                                </div>
+                            </div>
+
+                            <div class="collapsible-section">
+                                <div class="collapsible-header" id="lqc-advanced-toggle">
+                                    <span>Advanced Parameters</span>
+                                    <i class="fa-solid fa-chevron-down arrow"></i>
+                                </div>
+                                <div class="collapsible-body hidden" id="lqc-advanced-body">
+                                    <div class="form-group">
+                                        <label for="lqc-genders">Allowed Genders</label>
+                                        <input type="text" id="lqc-genders" class="form-input" value="men, women, unisex, kids, infant">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="lqc-statuses">Allowed Ecom Statuses</label>
+                                        <input type="text" id="lqc-statuses" class="form-input" value="active, inactive, draft">
+                                    </div>
+                                    <div class="form-group checkbox-row">
+                                        <input type="checkbox" id="lqc-images-check">
+                                        <label for="lqc-images-check">Run Live HTTP Image Check</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="button" id="lqc-run-btn" class="btn primary-btn full-width"><i class="fa-solid fa-play"></i> Run QC Validation</button>
+                        </form>
+                    </div>
+
+                    <!-- QC Results Panel -->
+                    <div class="glass-card flex-column">
+                        <h2 class="card-title"><i class="fa-solid fa-file-shield"></i> Validation Dashboard</h2>
+
+                        <!-- Empty State -->
+                        <div id="lqc-initial-info" class="empty-state">
+                            <i class="fa-solid fa-shield empty-icon"></i>
+                            <p>Upload sheets and click **Run QC Validation** to generate compliance reports.</p>
+                        </div>
+
+                        <!-- Loading state -->
+                        <div id="lqc-loading" class="loading-state hidden">
+                            <div class="spinner"></div>
+                            <p>Executing listing audit and parsing size references...</p>
+                        </div>
+
+                        <!-- Results content -->
+                        <div id="lqc-results-area" class="hidden">
+                            <div class="metrics-grid">
+                                <div class="metric-card metric-total">
+                                    <div class="metric-title">Total Audited Rows</div>
+                                    <div class="metric-value" id="lqc-total">0</div>
+                                </div>
+                                <div class="metric-card metric-passed">
+                                    <div class="metric-title">Unique SKUs</div>
+                                    <div class="metric-value" id="lqc-skus">0</div>
+                                </div>
+                                <div class="metric-card metric-warnings">
+                                    <div class="metric-title">Unique Articles</div>
+                                    <div class="metric-value" id="lqc-articles">0</div>
+                                </div>
+                                <div class="metric-card metric-mismatch">
+                                    <div class="metric-title">Exceptions Flagged</div>
+                                    <div class="metric-value" id="lqc-exceptions">0</div>
+                                </div>
+                            </div>
+
+                            <div class="download-box">
+                                <h3 class="box-title">QC Report Ready</h3>
+                                <button id="lqc-download-btn" class="btn download-btn"><i class="fa-solid fa-file-excel"></i> Download Excel QC Report</button>
+                            </div>
+
+                            <!-- QC Checklist -->
+                            <h3 class="section-subtitle">QC Checklist Audit</h3>
+                            <div class="table-container small-height">
+                                <table class="qc-checklist-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Check Name</th>
+                                            <th>Target Condition</th>
+                                            <th>Actual Status</th>
+                                            <th style="text-align: center;">Result</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>zEcom Status Check</td>
+                                            <td>Should be 'Yes' for all articles</td>
+                                            <td id="qc-chk-zecom-text">N/A</td>
+                                            <td style="text-align: center;" id="qc-chk-zecom-res">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Launch Date Check</td>
+                                            <td>Should not be in the future</td>
+                                            <td id="qc-chk-launch-text">N/A</td>
+                                            <td style="text-align: center;" id="qc-chk-launch-res">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Gender Mismatch Check</td>
+                                            <td>Matches Content file gender reference</td>
+                                            <td id="qc-chk-gender-text">N/A</td>
+                                            <td style="text-align: center;" id="qc-chk-gender-res">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Color Name Check</td>
+                                            <td>Matches Content file Color Name reference</td>
+                                            <td id="qc-chk-color-text">N/A</td>
+                                            <td style="text-align: center;" id="qc-chk-color-res">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Size Check</td>
+                                            <td>Matches Content size (UK/US/Rus) reference</td>
+                                            <td id="qc-chk-size-text">N/A</td>
+                                            <td style="text-align: center;" id="qc-chk-size-res">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Price Check</td>
+                                            <td>Matches zEcom RRP reference price</td>
+                                            <td id="qc-chk-price-text">N/A</td>
+                                            <td style="text-align: center;" id="qc-chk-price-res">-</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Quantity Check</td>
+                                            <td>Quantity must be exactly 0 for all items</td>
+                                            <td id="qc-chk-qty-text">N/A</td>
+                                            <td style="text-align: center;" id="qc-chk-qty-res">-</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Live Listing Sync Audit (Post QC only) -->
+                            <div id="lqc-sync-audit-section" class="hidden">
+                                <h3 class="section-subtitle"><i class="fa-solid fa-arrows-rotate"></i> Live Store Listing Sync Audit</h3>
+                                <div class="action-btn-row">
+                                    <button type="button" id="lqc-run-sync-btn" class="btn primary-btn"><i class="fa-solid fa-play"></i> Execute Comparison Audit</button>
+                                </div>
+
+                                <div id="lqc-sync-loading" class="loading-state hidden">
+                                    <div class="spinner"></div>
+                                    <p>Comparing listings variants to live store indexes...</p>
+                                </div>
+
+                                <div id="lqc-sync-results" class="hidden">
+                                    <div class="metrics-grid">
+                                        <div class="metric-card" style="border-top-color: #00c5c8;">
+                                            <div class="metric-title" style="color: #00c5c8;">Passed Matching</div>
+                                            <div class="metric-value" id="lqc-sync-passed">0</div>
+                                        </div>
+                                        <div class="metric-card" style="border-top-color: #f87171;">
+                                            <div class="metric-title" style="color: #f87171;">Price Mismatches</div>
+                                            <div class="metric-value" id="lqc-sync-price-err">0</div>
+                                        </div>
+                                        <div class="metric-card" style="border-top-color: #fbbf24;">
+                                            <div class="metric-title" style="color: #fbbf24;">Status Mismatches</div>
+                                            <div class="metric-value" id="lqc-sync-status-err">0</div>
+                                        </div>
+                                        <div class="metric-card" style="border-top-color: #a78bfa;">
+                                            <div class="metric-title" style="color: #a78bfa;">Stock Mismatches</div>
+                                            <div class="metric-value" id="lqc-sync-stock-err">0</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="download-box">
+                                        <h3 class="box-title">Live Comparison Audit Output</h3>
+                                        <button id="lqc-sync-download-btn" class="btn download-btn"><i class="fa-solid fa-file-excel"></i> Download Sync Discrepancies Report</button>
+                                    </div>
+
+                                    <h3 class="section-subtitle">Sync Audit Mismatches</h3>
+                                    <div class="table-container small-height">
+                                        <table class="data-table" id="lqc-sync-mismatch-table">
+                                            <!-- JS items -->
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
