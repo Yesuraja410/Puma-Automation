@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Import loaders and validators from current directory
 from file_loaders import load_all_files
-from validators import run_sku_validation, run_pid_validation
+from validators import run_sku_validation, run_pid_validation, save_df_to_excel_fast
 
 class LocalFileWrapper:
     def __init__(self, filepath):
@@ -88,13 +88,14 @@ def run_local_validation():
         fname = f"Shopee_PH_Status_Validation_Report_{today}_Local.xlsx"
         fpath = os.path.join(output_dir, fname)
         
-        with pd.ExcelWriter(fpath, engine="xlsxwriter") as writer:
-            if not sk.empty:
-                sk.to_excel(writer, sheet_name="SKU Validation", index=False)
-                print(f"   * Wrote {len(sk)} rows to 'SKU Validation' sheet.")
-            if not pi.empty:
-                pi.to_excel(writer, sheet_name="PID Validation", index=False)
-                print(f"   * Wrote {len(pi)} rows to 'PID Validation' sheet.")
+        sheets = {}
+        if not sk.empty:
+            sheets["SKU Validation"] = sk
+            print(f"   * Wrote {len(sk)} rows to 'SKU Validation' sheet.")
+        if not pi.empty:
+            sheets["PID Validation"] = pi
+            print(f"   * Wrote {len(pi)} rows to 'PID Validation' sheet.")
+        save_df_to_excel_fast(sheets, fpath)
                 
         print(f"-> Excel report saved to: {fpath}")
         print(f"-> Saving completed in {time.time() - save_start:.2f} seconds.")

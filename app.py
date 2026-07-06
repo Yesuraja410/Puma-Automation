@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 from file_loaders import load_all_files
-from validators import run_sku_validation, run_pid_validation
+from validators import run_sku_validation, run_pid_validation, save_df_to_excel_fast
 from report_generator import generate_status_report
 from styles import inject_css
 from order_processor import process_and_validate_orders
@@ -91,19 +91,14 @@ def _make_filename(data, country):
 def _write_report(sheets, fname):
     """Write report to persistent directory. Returns file path."""
     fpath = os.path.join(REPORT_DIR, fname)
-    with pd.ExcelWriter(fpath, engine="xlsxwriter") as writer:
-        for sheet_name, df in sheets.items():
-            if not df.empty:
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+    save_df_to_excel_fast(sheets, fpath)
     return fpath
 
 
 def _write_qc_report(sheets, fname):
     """Write QC audit report to persistent directory. Returns file path."""
     fpath = os.path.join(REPORT_DIR, fname)
-    with pd.ExcelWriter(fpath, engine="xlsxwriter") as writer:
-        for sheet_name, df in sheets.items():
-            df.to_excel(writer, sheet_name=sheet_name, index=False)
+    save_df_to_excel_fast(sheets, fpath)
     return fpath
 
 
@@ -1118,14 +1113,13 @@ elif task == "Order & OMS Validation":
                 # Download Section
                 st.markdown("#### Download Report")
                 excel_buffer = io.BytesIO()
-                with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
-                    enriched_df.to_excel(writer, sheet_name="Enriched Pending Orders", index=False)
-                    if not disc_df.empty:
-                        disc_df.to_excel(writer, sheet_name="Status Discrepancies", index=False)
-                    if not missing_mp_df.empty:
-                        missing_mp_df.to_excel(writer, sheet_name="Missing Marketplace Orders", index=False)
-                    if not mp_summary_df.empty:
-                        mp_summary_df.to_excel(writer, sheet_name="Marketplace Match Summary", index=False)
+                order_sheets = {
+                    "Enriched Pending Orders": enriched_df,
+                    "Status Discrepancies": disc_df,
+                    "Missing Marketplace Orders": missing_mp_df,
+                    "Marketplace Match Summary": mp_summary_df
+                }
+                save_df_to_excel_fast(order_sheets, excel_buffer)
                 
                 st.download_button(
                     label="📥 Download Enriched Pending Orders & Discrepancies (Excel)",

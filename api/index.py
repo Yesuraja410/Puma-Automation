@@ -14,7 +14,7 @@ import pandas as pd
 
 # Core imports
 from file_loaders import load_all_files
-from validators import run_sku_validation, run_pid_validation
+from validators import run_sku_validation, run_pid_validation, save_df_to_excel_fast
 from order_processor import process_and_validate_orders
 from email_sender import test_smtp_connection, send_seller_report_email
 
@@ -26,18 +26,28 @@ from listing_qc_validator.utils.file_loaders import (
     load_content as lqc_load_content,
     load_zecom as lqc_load_zecom,
     load_excel_all_sheets as lqc_load_excel_all_sheets,
-    process_live_files as lqc_process_live_files,
+    process_live_files as lqc_process_live_files
+)
+from listing_qc_validator.utils.validators import (
+    validate_dataframe as lqc_validate_dataframe, 
+    compare_source_and_live as lqc_compare_source_and_live,
     ALLOWED_GENDERS as LQC_ALLOWED_GENDERS,
     ALLOWED_STATUSES as LQC_ALLOWED_STATUSES
 )
-from listing_qc_validator.utils.validators import validate_dataframe as lqc_validate_dataframe, compare_source_and_live as lqc_compare_source_and_live
 from listing_qc_validator.utils.report_generator import (
     generate_qc_excel_report as lqc_generate_qc_excel_report,
     generate_comparison_excel_report as lqc_generate_comparison_excel_report
 )
 
-app = Flask(__name__)
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+public_dir = os.path.join(project_root, "public")
+
+app = Flask(__name__, static_folder=public_dir, static_url_path="")
 CORS(app)
+
+@app.route("/")
+def index():
+    return app.send_static_file("index.html")
 
 # Wrapper class to make Flask FileStorage object compatible with _read_file
 class FileWrapper:
@@ -73,12 +83,14 @@ def _make_filename(data, country):
 def _write_report_in_memory(sheets):
     """Write Excel report to bytes buffer and return base64 string."""
     excel_buffer = io.BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
-        for sheet_name, df in sheets.items():
-            if not df.empty:
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
+    save_df_to_excel_fast(sheets, excel_buffer)
     excel_buffer.seek(0)
     return base64.b64encode(excel_buffer.read()).decode("utf-8")
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "message": "Backend server is running locally"}), 200
 
 
 @app.route("/api/status-validation", methods=["POST"])

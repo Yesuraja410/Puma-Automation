@@ -1,5 +1,6 @@
 import re
 import pandas as pd
+import numpy as np
 
 
 def _safe_num(val):
@@ -18,6 +19,14 @@ def _safe_str(val):
     except (TypeError, ValueError):
         pass
     return str(val).strip()
+
+
+def _clean_sku(val):
+    s = _safe_str(val)
+    if re.fullmatch(r'\d+\.0', s):
+        s = s[:-2]
+    return s
+
 
 
 def _normalise_status(status):
@@ -100,34 +109,33 @@ def _build_ecom_map(zecom, mp_name):
 
 
 def _build_tc_map(tc_inv):
-    tc_map = {}
-    parent_fallback = {}
-
     if tc_inv.empty or "SKU" not in tc_inv.columns:
-        return tc_map
+        return {}
 
     skus = tc_inv["SKU"].tolist()
     tc_skus = tc_inv["TC SKU"].tolist() if "TC SKU" in tc_inv.columns else skus
     tc_statuses = tc_inv["TC Status"].tolist() if "TC Status" in tc_inv.columns else ["Unknown"] * len(skus)
     max_0s = tc_inv["Max 0"].tolist() if "Max 0" in tc_inv.columns else ["No"] * len(skus)
 
+    tc_map = {}
+    parent_fallback = {}
+
     for sku, tc_sku_raw, tc_status, max_0 in zip(skus, tc_skus, tc_statuses, max_0s):
-        sku_s = _safe_str(sku)
-        if not sku_s:
+        if not sku:
             continue
         entry = {
-            "TC SKU":    _safe_str(tc_sku_raw),
-            "TC Status": _safe_str(tc_status),
-            "Max 0":     _safe_str(max_0),
+            "TC SKU":    tc_sku_raw,
+            "TC Status": tc_status,
+            "Max 0":     max_0,
         }
-        if "-" in sku_s:
-            tc_map[sku_s] = entry
-            parent_base = sku_s.rsplit("-", 1)[0]
+        if "-" in sku:
+            tc_map[sku] = entry
+            parent_base = sku.rsplit("-", 1)[0]
             if parent_base not in tc_map:
                 parent_fallback[parent_base] = entry
         else:
-            if sku_s not in tc_map:
-                tc_map[sku_s] = entry
+            if sku not in tc_map:
+                tc_map[sku] = entry
 
     for parent, entry in parent_fallback.items():
         if parent not in tc_map:
@@ -137,25 +145,27 @@ def _build_tc_map(tc_inv):
 
 
 def _build_stock_map(all_df, apply_buffer=False):
-    stock_map = {}
     if all_df.empty or "SKU" not in all_df.columns:
-        return stock_map
+        return {}
 
-    skus = all_df["SKU"].tolist()
-    tc_stocks = all_df["TC Stock"].tolist() if "TC Stock" in all_df.columns else [0] * len(skus)
-    reserved_stocks = all_df["Reserved Stock"].tolist() if "Reserved Stock" in all_df.columns else [0] * len(skus)
-
-    for sku, tc_val, reserved_val in zip(skus, tc_stocks, reserved_stocks):
-        sku_s = _safe_str(sku)
-        if sku_s and sku_s not in stock_map:
-            tc = _safe_num(tc_val)
-            tc = max(tc, 0)
-            if apply_buffer:
-                tc = max(tc - 1, 0)
-            stock_map[sku_s] = {
-                "TC Stock":       tc,
-                "Reserved Stock": _safe_num(reserved_val),
-            }
+    # Drop duplicate SKUs keeping the first, since the loop only adds when SKU is not in stock_map
+    df_unique = all_df.drop_duplicates(subset=["SKU"], keep="first")
+    
+    # We already converted TC Stock and Reserved Stock during load_all_file, but let's make sure
+    tc_stock = pd.to_numeric(df_unique["TC Stock"], errors="coerce").fillna(0.0).clip(lower=0.0)
+    if apply_buffer:
+        tc_stock = (tc_stock - 1.0).clip(lower=0.0)
+        
+    reserved_stock = pd.to_numeric(df_unique["Reserved Stock"], errors="coerce").fillna(0.0)
+    
+    skus = df_unique["SKU"].tolist()
+    tc_stock_list = tc_stock.tolist()
+    res_stock_list = reserved_stock.tolist()
+    
+    stock_map = {
+        sku: {"TC Stock": tc, "Reserved Stock": res}
+        for sku, tc, res in zip(skus, tc_stock_list, res_stock_list)
+    }
     return stock_map
 
 
@@ -183,25 +193,20 @@ def _build_excl_map(exclusion):
 
 
 def _build_launch_map(zecom):
-    launch_map = {}
     if zecom.empty or "Article No" not in zecom.columns:
-        return launch_map
+        return {}
     if "Launch Date" not in zecom.columns:
-        return launch_map
+        return {}
 
     arts = zecom["Article No"].tolist()
-    launch_dates = zecom["Launch Date"].tolist()
+    # Vectorized date format to string, fallback to empty string
+    formatted_dates = pd.to_datetime(zecom["Launch Date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna("").tolist()
 
-    for art, ld in zip(arts, launch_dates):
+    launch_map = {}
+    for art, formatted_ld in zip(arts, formatted_dates):
         art_norm = _normalise_article_no(art)
         if art_norm:
-            if pd.notna(ld) and str(ld).strip() not in ("", "NaT", "nan"):
-                try:
-                    launch_map[art_norm] = str(pd.to_datetime(ld).date())
-                except Exception:
-                    launch_map[art_norm] = _safe_str(ld)
-            else:
-                launch_map[art_norm] = ""
+            launch_map[art_norm] = formatted_ld
     return launch_map
 
 
@@ -298,6 +303,16 @@ def _sku_logic(mp_status, mp_stock, ecom_status, tc_status,
     }
 
 
+# ── Vectorized status helper ───────────────────────────────────────────
+
+def _normalise_status_series(ser):
+    s = ser.fillna("").astype(str).str.strip().str.lower()
+    active_mask = s.isin(["active", "1", "enabled", "yes", "y", "live", "listed"])
+    inactive_mask = s.isin(["inactive", "0", "disabled", "no", "n", "delisted", "unlisted", "deleted", "removed"])
+    default_vals = ser.fillna("").astype(str).str.strip()
+    return np.select([active_mask, inactive_mask], ["Active", "Inactive"], default=default_vals)
+
+
 # ── SKU-level validation (Lazada + Zalora) ────────────────────────────────────
 
 def run_sku_validation(data, country):
@@ -317,7 +332,7 @@ def run_sku_validation(data, country):
         "Zalora " + country: data.get("zalora", pd.DataFrame()),
     }
 
-    rows = []
+    frames = []
     for mp_name, df in mp_sources.items():
         if df is None or df.empty or "SKU" not in df.columns:
             continue
@@ -326,92 +341,149 @@ def run_sku_validation(data, country):
         ecom_map  = _build_ecom_map(zecom, mp_name)
         stock_map = _build_stock_map(all_df, apply_buffer)
 
-        records = df.to_dict('records')
-        for r in records:
-            sku        = _safe_str(r.get("SKU", ""))
-            mp_status  = _safe_str(r.get("MP Status", "Unknown"))
-            mp_stock   = _safe_num(r.get("MP Stock", 0))
-            article_no = article_map.get(sku, "")
-            ecom_st    = ecom_map.get(article_no, "Inactive") if article_no else "Inactive"
-            tc_data    = tc_map.get(sku, {"TC SKU": "", "TC Status": "Unknown", "Max 0": "No"})
-            sd         = stock_map.get(sku, {"TC Stock": 0.0, "Reserved Stock": 0.0})
-            excl_lbl   = excl_map.get(article_no, "") or excl_map.get(sku, "")
-            launch_dt  = launch_map.get(article_no, "") if article_no else ""
+        df = df.copy()
+        df["SKU_orig"] = df["SKU"]
+        df["SKU"] = df["SKU"].apply(_safe_str)
+        df["SKU_clean"] = df["SKU"].apply(_clean_sku)
 
-            # Invalid SKU check — must be exactly 13 digits
-            if not _is_valid_sku(sku):
-                rows.append({
-                    "Marketplace":    mp_name,
-                    "Seller SKU":     sku,
-                    "TC SKU":         tc_data["TC SKU"] if tc_data["TC SKU"] else "#N/A",
-                    "Article No":     article_no if article_no else "#N/A",
-                    "MP Status":      mp_status if mp_status else "#N/A",
-                    "TC Status":      "#N/A",
-                    "e-com (Yes/No)": "#N/A",
-                    "Launch Date":    launch_dt if launch_dt else "#N/A",
-                    "Exclusion":      excl_lbl if excl_lbl else "#N/A",
-                    "ECOM Status":    "#N/A",
-                    "MP Stock":       mp_stock,
-                    "TC Stock":       "#N/A",
-                    "Reserved Stock": "#N/A",
-                    "Max 0":          "#N/A",
-                    "Final Status":   "Invalid",
-                    "Comments":       "Invalid SKU",
-                    "Final Check":    "False",
-                    "Stock Check":    "False",
-                    "Remarks":        "Invalid SKU",
-                    "Max Setup":      "#N/A",
-                    "Update 0":       "#N/A",
-                })
-                continue
+        tc_df = pd.DataFrame.from_dict(tc_map, orient="index")
+        stock_df = pd.DataFrame.from_dict(stock_map, orient="index")
+        
+        art_series = pd.Series(article_map, name="Article No")
+        ecom_series = pd.Series(ecom_map, name="Ecom Status")
+        
+        df = df.join(art_series, on="SKU_clean")
+        df["Article No"] = df["Article No"].fillna("")
+        
+        df = df.join(ecom_series, on="Article No")
+        df["Ecom Status"] = df["Ecom Status"].fillna("Inactive")
+        
+        df = df.join(tc_df, on="SKU_clean")
+        df["TC SKU"] = df["TC SKU"].fillna("")
+        df["TC Status"] = df["TC Status"].fillna("Unknown")
+        df["Max 0"] = df["Max 0"].fillna("No")
+        
+        df = df.join(stock_df, on="SKU_clean")
+        df["TC Stock"] = df["TC Stock"].fillna(0.0)
+        df["Reserved Stock"] = df["Reserved Stock"].fillna(0.0)
+        
+        df["Launch Date"] = df["Article No"].map(launch_map).fillna("")
+        
+        excl_art = df["Article No"].map(excl_map)
+        excl_sku = df["SKU_clean"].map(excl_map)
+        df["Exclusion"] = excl_art.fillna(excl_sku).fillna("")
+        
+        df["SKU Valid"] = df["SKU_clean"].apply(_is_valid_sku)
+        
+        df["MP Status"] = df["MP Status"].apply(_safe_str)
+        df["MP Stock"] = pd.to_numeric(df["MP Stock"], errors="coerce").fillna(0.0)
 
-            # Normalise ecom for logic: future launch = Inactive for logic
-            ecom_for_logic = "Inactive" if ecom_st.startswith("Inactive") else ecom_st
+        df["Final Status"] = ""
+        df["Comments"] = ""
+        df["Max Setup"] = ""
 
-            result = _sku_logic(
-                mp_status=mp_status,
-                mp_stock=mp_stock,
-                ecom_status=ecom_for_logic,
-                tc_status=tc_data["TC Status"],
-                tc_stock=sd["TC Stock"],
-                reserved=sd["Reserved Stock"],
-                max_0=tc_data["Max 0"],
-                article_no=article_no,
-                excl_map=excl_map,
-                sku=sku,
-            )
-            rows.append({
-                "Marketplace":    mp_name,
-                "Seller SKU":     sku,
-                "TC SKU":         tc_data["TC SKU"],
-                "Article No":     article_no,
-                "MP Status":      mp_status,
-                "TC Status":      _normalise_status(tc_data["TC Status"]),
-                "e-com (Yes/No)": "Yes" if ecom_st == "Active" else "No",
-                "Launch Date":    launch_dt,
-                "Exclusion":      excl_lbl,
-                "ECOM Status":    ecom_st,
-                "MP Stock":       mp_stock,
-                "TC Stock":       sd["TC Stock"],
-                "Reserved Stock": sd["Reserved Stock"],
-                "Max 0":          tc_data["Max 0"],
-                **result,
-            })
+        excl_val = df["Exclusion"]
+        has_excl = excl_val.notna() & (excl_val != "")
 
-    return pd.DataFrame(rows) if rows else pd.DataFrame()
+        # Exclusion = Inactive
+        excl_inactive = has_excl & (excl_val == "Inactive")
+        df.loc[excl_inactive, "Final Status"] = "Inactive"
+        df.loc[excl_inactive, "Comments"] = "Inactive as per AM Request"
+        df.loc[excl_inactive, "Max Setup"] = np.where(df.loc[excl_inactive, "Max 0"] == "Yes", "", "Set max 0")
+
+        # Exclusion = Active
+        excl_active = has_excl & (excl_val == "Active")
+        df.loc[excl_active, "Final Status"] = np.where(df.loc[excl_active, "TC Stock"] >= 1, "Active", "Inactive")
+        df.loc[excl_active, "Comments"] = np.where(df.loc[excl_active, "TC Stock"] >= 1, "Active as per AM Request", "AM Request Active but 0 Stock")
+        df.loc[excl_active, "Max Setup"] = np.where(df.loc[excl_active, "Max 0"] == "Yes", "Remove max", "")
+
+        no_excl = ~has_excl
+        
+        cond_ecom_no = no_excl & (df["Ecom Status"].str.startswith("Inactive"))
+        df.loc[cond_ecom_no, "Final Status"] = "Inactive"
+        df.loc[cond_ecom_no, "Comments"] = "Due to Ecom No"
+        
+        cond_stock_0 = no_excl & (~df["Ecom Status"].str.startswith("Inactive")) & (df["TC Stock"] == 0)
+        df.loc[cond_stock_0, "Final Status"] = "Inactive"
+        df.loc[cond_stock_0, "Comments"] = "Due to 0 Stock"
+        
+        cond_active = no_excl & (~df["Ecom Status"].str.startswith("Inactive")) & (df["TC Stock"] != 0)
+        df.loc[cond_active, "Final Status"] = "Active"
+        df.loc[cond_active, "Comments"] = "Ecom Yes with Stock"
+        
+        comment_is_ecom_no = df["Comments"] == "Due to Ecom No"
+        df.loc[no_excl & comment_is_ecom_no & (df["Max 0"] == "No"), "Max Setup"] = "Set max 0"
+        
+        comment_is_stock_or_ecom_active = df["Comments"].isin(["Due to 0 Stock", "Ecom Yes with Stock"])
+        df.loc[no_excl & comment_is_stock_or_ecom_active & (df["Max 0"] == "Yes"), "Max Setup"] = "Remove max"
+
+        mp_norm = _normalise_status_series(df["MP Status"])
+        tc_norm = _normalise_status_series(df["TC Status"])
+        fin_norm = df["Final Status"]
+
+        final_check_bool = (mp_norm == tc_norm) & (tc_norm == fin_norm)
+        df["Final Check"] = final_check_bool.astype(str)
+        df["Stock Check"] = (df["MP Stock"] == df["TC Stock"]).astype(str)
+
+        df["Remarks"] = "All Good"
+        not_fc = ~final_check_bool
+        df.loc[not_fc, "Remarks"] = np.where(df.loc[not_fc, "Final Status"] == "Active", "Change to Active", "Change to Inactive")
+
+        fc_not_sc = final_check_bool & (df["MP Stock"] != df["TC Stock"])
+        active_fc_not_sc = fc_not_sc & (df["Final Status"] == "Active")
+        df.loc[active_fc_not_sc, "Remarks"] = np.where(df.loc[active_fc_not_sc, "Reserved Stock"] != 0, "Due to Reserved Stock", "Make Impact")
+
+        inactive_fc_not_sc = fc_not_sc & (df["Final Status"] != "Active")
+        df.loc[inactive_fc_not_sc, "Remarks"] = "Stock not pushed due to Inactive Status"
+
+        df["Update 0"] = np.where((df["TC Stock"] <= 0) & (df["MP Stock"] > 0), "Yes", "")
+
+        # Convert numeric columns to object type to allow string '#N/A' overwrites for invalid rows
+        for col in ["TC Stock", "Reserved Stock"]:
+            if col in df.columns:
+                df[col] = df[col].astype(object)
+
+        # Handle Invalid SKUs
+        invalid_mask = ~df["SKU Valid"]
+        df.loc[invalid_mask, "TC SKU"] = np.where(df.loc[invalid_mask, "TC SKU"] != "", df.loc[invalid_mask, "TC SKU"], "#N/A")
+        df.loc[invalid_mask, "Article No"] = np.where(df.loc[invalid_mask, "Article No"] != "", df.loc[invalid_mask, "Article No"], "#N/A")
+        df.loc[invalid_mask, "MP Status"] = np.where(df.loc[invalid_mask, "MP Status"] != "", df.loc[invalid_mask, "MP Status"], "#N/A")
+        df.loc[invalid_mask, "TC Status"] = "#N/A"
+        df.loc[invalid_mask, "e-com (Yes/No)"] = "#N/A"
+        df.loc[invalid_mask, "Launch Date"] = np.where(df.loc[invalid_mask, "Launch Date"] != "", df.loc[invalid_mask, "Launch Date"], "#N/A")
+        df.loc[invalid_mask, "Exclusion"] = np.where(df.loc[invalid_mask, "Exclusion"] != "", df.loc[invalid_mask, "Exclusion"], "#N/A")
+        df.loc[invalid_mask, "ECOM Status"] = "#N/A"
+        df.loc[invalid_mask, "Final Status"] = "Invalid"
+        df.loc[invalid_mask, "Comments"] = "Invalid SKU"
+        df.loc[invalid_mask, "Final Check"] = "False"
+        df.loc[invalid_mask, "TC Stock"] = "#N/A"
+        df.loc[invalid_mask, "Reserved Stock"] = "#N/A"
+        df.loc[invalid_mask, "Max 0"] = "#N/A"
+        df.loc[invalid_mask, "Stock Check"] = "False"
+        df.loc[invalid_mask, "Remarks"] = "Invalid SKU"
+        df.loc[invalid_mask, "Max Setup"] = "#N/A"
+        df.loc[invalid_mask, "Update 0"] = "#N/A"
+
+        df["Marketplace"] = mp_name
+        df["Seller SKU"] = df["SKU_orig"]
+        df["e-com (Yes/No)"] = np.where(df["Ecom Status"] == "Active", "Yes", "No")
+        df["ECOM Status"] = df["Ecom Status"]
+
+        out_cols = [
+            "Marketplace", "Seller SKU", "TC SKU", "Article No", "MP Status",
+            "TC Status", "e-com (Yes/No)", "Launch Date", "Exclusion", "ECOM Status",
+            "MP Stock", "TC Stock", "Reserved Stock", "Max 0",
+            "Final Status", "Comments", "Final Check", "Stock Check", "Remarks",
+            "Max Setup", "Update 0"
+        ]
+        frames.append(df[out_cols])
+
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-# ── PID-level logic (Shopee + TikTok) ────────────────────────────────────────
+# ── PID-level validation (Shopee + TikTok) ────────────────────────────────────
 
 def run_pid_validation(data, country):
-    """
-    Output columns:
-    Marketplace, SellerSku, TC SKU, Product ID, Article No, MP Status,
-    TC Status, e-com (Yes/No), Launch Date, Exclusion, ECOM Status,
-    Final Status, Comments, Final Check, Dual Status, Consolidated SUM QTY,
-    MP Stock, TC Stock, Reserved Stock, Max 0, Stock Check,
-    Remarks, Max Setup, Update 0
-    """
     content   = data.get("content",   pd.DataFrame())
     tc_inv    = data.get("tc_inv",    pd.DataFrame())
     zecom     = data.get("zecom",     pd.DataFrame())
@@ -429,8 +501,7 @@ def run_pid_validation(data, country):
     if country == "MY":
         mp_sources["TikTok MY"] = data.get("tiktok", pd.DataFrame())
 
-    rows = []
-
+    frames = []
     for mp_name, df in mp_sources.items():
         if df is None or df.empty or "SKU" not in df.columns:
             continue
@@ -439,202 +510,219 @@ def run_pid_validation(data, country):
         ecom_map  = _build_ecom_map(zecom, mp_name)
         stock_map = _build_stock_map(all_df, apply_buffer)
 
-        # ── Step 1: Enrich each SKU row ───────────────────────────────────
-        enriched = []
-        records = df.to_dict('records')
-        for r in records:
-            sku       = _safe_str(r.get("SKU", ""))
-            pid       = _safe_str(r.get("Product ID", sku))
-            mp_status = _safe_str(r.get("MP Status", "Unknown"))
-            mp_stock  = _safe_num(r.get("MP Stock", 0))
-            art       = article_map.get(sku, "")
-            ecom_st   = ecom_map.get(art, "Inactive") if art else "Inactive"
-            # Normalise ecom for logic
-            ecom_logic = "Inactive" if ecom_st.startswith("Inactive") else ecom_st
-            td        = tc_map.get(sku, {"TC SKU": "", "TC Status": "Unknown", "Max 0": "No"})
-            sd        = stock_map.get(sku, {"TC Stock": 0.0, "Reserved Stock": 0.0})
-            excl_lbl  = excl_map.get(art, "") or excl_map.get(sku, "")
-            launch_dt = launch_map.get(art, "") if art else ""
-            sku_valid = _is_valid_sku(sku)
-            enriched.append({
-                "SKU":            sku,
-                "Product ID":     pid,
-                "MP Status":      mp_status,
-                "MP Stock":       mp_stock,
-                "Article No":     art,
-                "Ecom Status":    ecom_st,
-                "Ecom Logic":     ecom_logic,
-                "TC SKU":         td["TC SKU"],
-                "TC Status":      td["TC Status"],
-                "Max 0":          td["Max 0"],
-                "TC Stock":       sd["TC Stock"],
-                "Reserved Stock": sd["Reserved Stock"],
-                "Exclusion":      excl_lbl,
-                "Launch Date":    launch_dt,
-                "SKU Valid":      sku_valid,
-            })
+        df = df.copy()
+        df["SKU_orig"] = df["SKU"]
+        df["SKU"] = df["SKU"].apply(_safe_str)
+        df["SKU_clean"] = df["SKU"].apply(_clean_sku)
+        
+        df["Product ID"] = df.get("Product ID", df["SKU"]).apply(_safe_str)
+        df["MP Status"] = df["MP Status"].apply(_safe_str)
+        df["MP Stock"] = pd.to_numeric(df["MP Stock"], errors="coerce").fillna(0.0)
 
-        enriched_df = pd.DataFrame(enriched)
-        if enriched_df.empty:
-            continue
+        tc_df = pd.DataFrame.from_dict(tc_map, orient="index")
+        stock_df = pd.DataFrame.from_dict(stock_map, orient="index")
+        art_series = pd.Series(article_map, name="Article No")
+        ecom_series = pd.Series(ecom_map, name="Ecom Status")
+        
+        df = df.join(art_series, on="SKU_clean")
+        df["Article No"] = df["Article No"].fillna("")
+        
+        df = df.join(ecom_series, on="Article No")
+        df["Ecom Status"] = df["Ecom Status"].fillna("Inactive")
+        
+        df = df.join(tc_df, on="SKU_clean")
+        df["TC SKU"] = df["TC SKU"].fillna("")
+        df["TC Status"] = df["TC Status"].fillna("Unknown")
+        df["Max 0"] = df["Max 0"].fillna("No")
+        
+        df = df.join(stock_df, on="SKU_clean")
+        df["TC Stock"] = df["TC Stock"].fillna(0.0)
+        df["Reserved Stock"] = df["Reserved Stock"].fillna(0.0)
+        
+        df["Launch Date"] = df["Article No"].map(launch_map).fillna("")
+        
+        excl_art = df["Article No"].map(excl_map)
+        excl_sku = df["SKU_clean"].map(excl_map)
+        df["Exclusion"] = excl_art.fillna(excl_sku).fillna("")
+        
+        df["SKU Valid"] = df["SKU_clean"].apply(_is_valid_sku)
+        df["Ecom Logic"] = np.where(df["Ecom Status"].str.startswith("Inactive"), "Inactive", df["Ecom Status"])
 
-        # ── Step 2: Dual Status per Product ID ───────────────────────────
-        dual_map = {}
-        for pid, grp in enriched_df.groupby("Product ID", dropna=False):
-            statuses = set(grp["Ecom Logic"].unique())
-            dual_map[_safe_str(pid)] = (
-                2 if ("Active" in statuses and "Inactive" in statuses) else 1
-            )
+        # Dual Status
+        pid_active = df[df["Ecom Logic"] == "Active"]["Product ID"].unique()
+        pid_inactive = df[df["Ecom Logic"] == "Inactive"]["Product ID"].unique()
+        dual_pids = set(pid_active) & set(pid_inactive)
+        df["Dual Status"] = np.where(df["Product ID"].isin(dual_pids), 2, 1)
 
-        # ── Step 3: Consolidated TC Stock per Product ID ──────────────────
-        consolidated_map = (
-            enriched_df.groupby("Product ID")["TC Stock"].sum().to_dict()
+        # Consolidated TC Stock
+        df["Consolidated SUM QTY"] = df.groupby("Product ID")["TC Stock"].transform("sum")
+
+        df["Final Status"] = ""
+        df["Comments"] = ""
+        df["Max Setup"] = ""
+
+        excl_val = df["Exclusion"]
+        has_excl = excl_val.notna() & (excl_val != "")
+
+        # Exclusion = Inactive
+        excl_inactive = has_excl & (excl_val == "Inactive")
+        df.loc[excl_inactive, "Final Status"] = "Inactive"
+        df.loc[excl_inactive, "Comments"] = "Inactive as per AM Request"
+        df.loc[excl_inactive, "Max Setup"] = np.where(df.loc[excl_inactive, "Max 0"] == "Yes", "", "Set max 0")
+
+        # Exclusion = Active
+        excl_active = has_excl & (excl_val == "Active")
+        df.loc[excl_active, "Final Status"] = np.where(df.loc[excl_active, "Consolidated SUM QTY"] >= 1, "Active", "Inactive")
+        df.loc[excl_active, "Comments"] = np.where(df.loc[excl_active, "Consolidated SUM QTY"] >= 1, "Active as per AM Request", "AM Request Active but 0 Stock")
+        df.loc[excl_active, "Max Setup"] = np.where(df.loc[excl_active, "Max 0"] == "Yes", "Remove max", "")
+
+        no_excl = ~has_excl
+        
+        # Dual Status = 1
+        ds1 = no_excl & (df["Dual Status"] == 1)
+        
+        cond_ds1_ecom_no = ds1 & (df["Ecom Logic"] == "Inactive")
+        df.loc[cond_ds1_ecom_no, "Final Status"] = "Inactive"
+        df.loc[cond_ds1_ecom_no, "Comments"] = "Due to Ecom No"
+        
+        cond_ds1_stock_0 = ds1 & (df["Ecom Logic"] != "Inactive") & (df["Consolidated SUM QTY"] == 0)
+        df.loc[cond_ds1_stock_0, "Final Status"] = "Inactive"
+        df.loc[cond_ds1_stock_0, "Comments"] = "Due to 0 Stock"
+        
+        cond_ds1_active = ds1 & (df["Ecom Logic"] != "Inactive") & (df["Consolidated SUM QTY"] != 0)
+        df.loc[cond_ds1_active, "Final Status"] = "Active"
+        df.loc[cond_ds1_active, "Comments"] = "Ecom Yes with Stock"
+        
+        # Dual Status = 2
+        ds2 = no_excl & (df["Dual Status"] == 2)
+        
+        cond_ds2_stock_0 = ds2 & (df["Consolidated SUM QTY"] == 0)
+        df.loc[cond_ds2_stock_0, "Final Status"] = "Inactive"
+        df.loc[cond_ds2_stock_0, "Comments"] = "Due to 0 Stock"
+        
+        cond_ds2_active_ecom = ds2 & (df["Consolidated SUM QTY"] != 0) & (df["Ecom Logic"] == "Active")
+        df.loc[cond_ds2_active_ecom, "Final Status"] = "Active"
+        df.loc[cond_ds2_active_ecom, "Comments"] = "Ecom Yes with Stock"
+        
+        cond_ds2_set_max = ds2 & (df["Consolidated SUM QTY"] != 0) & (df["Ecom Logic"] != "Active")
+        df.loc[cond_ds2_set_max, "Final Status"] = "Active"
+        df.loc[cond_ds2_set_max, "Comments"] = "Set max"
+
+        # Max Setup logic for no_excl
+        comment_is_ecom_no_or_set_max = df["Comments"].isin(["Due to Ecom No", "Set max"])
+        df.loc[no_excl & comment_is_ecom_no_or_set_max & (df["Max 0"] == "No"), "Max Setup"] = "Set max"
+        
+        comment_is_ecom_stock = df["Comments"] == "Ecom Yes with Stock"
+        df.loc[no_excl & comment_is_ecom_stock & (df["Max 0"] == "Yes"), "Max Setup"] = "Remove max"
+        
+        comment_is_stock_0 = df["Comments"] == "Due to 0 Stock"
+        ecom_yn_yes = df["Ecom Status"] == "Active"
+        ecom_yn_no = df["Ecom Status"].isin(["No", "Inactive", ""])
+        df.loc[no_excl & comment_is_stock_0 & ecom_yn_yes & (df["Max 0"] == "Yes"), "Max Setup"] = "Remove max"
+        df.loc[no_excl & comment_is_stock_0 & ecom_yn_no & (df["Max 0"] == "No"), "Max Setup"] = "Set max"
+
+        mp_norm = _normalise_status_series(df["MP Status"])
+        tc_norm = _normalise_status_series(df["TC Status"])
+        fin_norm = df["Final Status"]
+
+        final_check_bool = (mp_norm == tc_norm) & (tc_norm == fin_norm)
+        df["Final Check"] = final_check_bool.astype(str)
+        df["Stock Check"] = (df["MP Stock"] == df["TC Stock"]).astype(str)
+
+        # Remarks
+        df["Remarks"] = "All Good"
+        not_fc = ~final_check_bool
+        df.loc[not_fc, "Remarks"] = "Update status to " + df.loc[not_fc, "Final Status"]
+
+        fc_not_sc = final_check_bool & (df["MP Stock"] != df["TC Stock"])
+        
+        active_fc_not_sc = fc_not_sc & (df["Final Status"] == "Active")
+        df.loc[active_fc_not_sc, "Remarks"] = np.select(
+            [
+                df.loc[active_fc_not_sc, "Comments"] == "Set max",
+                df.loc[active_fc_not_sc, "Reserved Stock"] != 0
+            ],
+            [
+                "Set max product",
+                "Due to Reserved Stock"
+            ],
+            default="Make Impact"
         )
 
-        # ── Step 4: Per-SKU output row ────────────────────────────────────
-        enriched_records = enriched_df.to_dict('records')
-        for r in enriched_records:
-            sku         = r["SKU"]
-            pid         = r["Product ID"]
-            mp_status   = r["MP Status"]
-            mp_stock    = r["MP Stock"]
-            article_no  = r["Article No"]
-            ecom_st     = r["Ecom Status"]
-            ecom_logic  = r["Ecom Logic"]
-            tc_sku      = r["TC SKU"]
-            tc_status   = r["TC Status"]
-            max_0       = r["Max 0"]
-            tc_stock    = r["TC Stock"]
-            reserved    = r["Reserved Stock"]
-            excl_lbl    = r["Exclusion"]
-            launch_dt   = r["Launch Date"]
-            sku_valid   = r["SKU Valid"]
+        inactive_fc_not_sc = fc_not_sc & (df["Final Status"] != "Active")
+        df.loc[inactive_fc_not_sc, "Remarks"] = "Stock not pushed due to Inactive Status"
 
-            dual_status     = dual_map.get(pid, 1)
-            consolidated_tc = consolidated_map.get(pid, 0.0)
-            ecom_yn         = "Yes" if ecom_st == "Active" else "No"
+        # Convert numeric columns to object type to allow string '#N/A' overwrites for invalid rows
+        for col in ["TC Stock", "Reserved Stock"]:
+            if col in df.columns:
+                df[col] = df[col].astype(object)
 
-            # Invalid SKU row
-            if not sku_valid:
-                rows.append({
-                    "Marketplace":          mp_name,
-                    "SellerSku":            sku,
-                    "TC SKU":               tc_sku if tc_sku else "#N/A",
-                    "Product ID":           pid if pid else "#N/A",
-                    "Article No":           article_no if article_no else "#N/A",
-                    "MP Status":            mp_status if mp_status else "#N/A",
-                    "TC Status":            "#N/A",
-                    "e-com (Yes/No)":       "#N/A",
-                    "Launch Date":          launch_dt if launch_dt else "#N/A",
-                    "Exclusion":            excl_lbl if excl_lbl else "#N/A",
-                    "ECOM Status":          "#N/A",
-                    "Final Status":         "Invalid",
-                    "Comments":             "Invalid SKU",
-                    "Final Check":          "False",
-                    "Dual Status":          dual_status,
-                    "Consolidated SUM QTY": consolidated_tc,
-                    "MP Stock":             mp_stock,
-                    "TC Stock":             "#N/A",
-                    "Reserved Stock":       "#N/A",
-                    "Max 0":                "#N/A",
-                    "Stock Check":          "False",
-                    "Remarks":              "Invalid SKU",
-                    "Max Setup":            "#N/A",
-                    "Update 0":             "#N/A",
-                })
-                continue
+        # Handle Invalid SKUs
+        invalid_mask = ~df["SKU Valid"]
+        df.loc[invalid_mask, "TC SKU"] = np.where(df.loc[invalid_mask, "TC SKU"] != "", df.loc[invalid_mask, "TC SKU"], "#N/A")
+        df.loc[invalid_mask, "Product ID"] = np.where(df.loc[invalid_mask, "Product ID"] != "", df.loc[invalid_mask, "Product ID"], "#N/A")
+        df.loc[invalid_mask, "Article No"] = np.where(df.loc[invalid_mask, "Article No"] != "", df.loc[invalid_mask, "Article No"], "#N/A")
+        df.loc[invalid_mask, "MP Status"] = np.where(df.loc[invalid_mask, "MP Status"] != "", df.loc[invalid_mask, "MP Status"], "#N/A")
+        df.loc[invalid_mask, "TC Status"] = "#N/A"
+        df.loc[invalid_mask, "e-com (Yes/No)"] = "#N/A"
+        df.loc[invalid_mask, "Launch Date"] = np.where(df.loc[invalid_mask, "Launch Date"] != "", df.loc[invalid_mask, "Launch Date"], "#N/A")
+        df.loc[invalid_mask, "Exclusion"] = np.where(df.loc[invalid_mask, "Exclusion"] != "", df.loc[invalid_mask, "Exclusion"], "#N/A")
+        df.loc[invalid_mask, "ECOM Status"] = "#N/A"
+        df.loc[invalid_mask, "Final Status"] = "Invalid"
+        df.loc[invalid_mask, "Comments"] = "Invalid SKU"
+        df.loc[invalid_mask, "Final Check"] = "False"
+        df.loc[invalid_mask, "TC Stock"] = "#N/A"
+        df.loc[invalid_mask, "Reserved Stock"] = "#N/A"
+        df.loc[invalid_mask, "Max 0"] = "#N/A"
+        df.loc[invalid_mask, "Stock Check"] = "False"
+        df.loc[invalid_mask, "Remarks"] = "Invalid SKU"
+        df.loc[invalid_mask, "Max Setup"] = "#N/A"
+        df.loc[invalid_mask, "Update 0"] = "#N/A"
 
-            # ── Exclusion override ────────────────────────────────────────
-            excl = _apply_exclusion(article_no, consolidated_tc, excl_map, max_0, sku=sku)
-            if excl:
-                final_status, comment, max_action = excl
-            else:
-                # ── Dual Status = 1 ───────────────────────────────────────
-                if dual_status == 1:
-                    if ecom_logic == "Inactive":
-                        final_status = "Inactive"
-                        comment      = "Due to Ecom No"
-                    elif consolidated_tc == 0:
-                        final_status = "Inactive"
-                        comment      = "Due to 0 Stock"
-                    else:
-                        final_status = "Active"
-                        comment      = "Ecom Yes with Stock"
-                # ── Dual Status = 2 ───────────────────────────────────────
-                else:
-                    if consolidated_tc == 0:
-                        final_status = "Inactive"
-                        comment      = "Due to 0 Stock"
-                    elif ecom_logic == "Active":
-                        final_status = "Active"
-                        comment      = "Ecom Yes with Stock"
-                    else:
-                        final_status = "Active"
-                        comment      = "Set max"
+        df["Marketplace"] = mp_name
+        df["SellerSku"] = df["SKU_orig"]
+        df["e-com (Yes/No)"] = np.where(df["Ecom Status"] == "Active", "Yes", "No")
+        df["ECOM Status"] = df["Ecom Status"]
 
-                # ── Max Setup logic ───────────────────────────────────────
-                max_action = ""
-                if comment in ("Due to Ecom No", "Set max") and max_0 == "No":
-                    max_action = "Set max"
-                elif comment == "Ecom Yes with Stock" and max_0 == "Yes":
-                    max_action = "Remove max"
-                elif comment == "Due to 0 Stock":
-                    if ecom_yn == "Yes" and max_0 == "Yes":
-                        max_action = "Remove max"
-                    elif ecom_yn in ("No", "") and max_0 == "No":
-                        max_action = "Set max"
+        out_cols = [
+            "Marketplace", "SellerSku", "TC SKU", "Product ID", "Article No", "MP Status",
+            "TC Status", "e-com (Yes/No)", "Launch Date", "Exclusion", "ECOM Status",
+            "Final Status", "Comments", "Final Check", "Dual Status", "Consolidated SUM QTY",
+            "MP Stock", "TC Stock", "Reserved Stock", "Max 0", "Stock Check",
+            "Remarks", "Max Setup", "Update 0"
+        ]
+        frames.append(df[out_cols])
 
-            # ── Final Check & Stock Check ─────────────────────────────────
-            mp_norm  = _normalise_status(mp_status)
-            tc_norm  = _normalise_status(tc_status)
-            fin_norm = final_status
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
-            final_check = (mp_norm == tc_norm == fin_norm)
-            stock_check = (mp_stock == tc_stock)
 
-            # ── Remarks ───────────────────────────────────────────────────
-            if not final_check:
-                remarks = "Update status to " + final_status
-            elif not stock_check:
-                if final_status == "Active":
-                    if comment == "Set max":
-                        remarks = "Set max product"
-                    elif reserved != 0:
-                        remarks = "Due to Reserved Stock"
-                    else:
-                        remarks = "Make Impact"
-                else:
-                    remarks = "Stock not pushed due to Inactive Status"
-            else:
-                remarks = "All Good"
+# ── Fast Excel Writer ──────────────────────────────────────────────────────────
 
-            push_0 = "Yes" if (tc_stock <= 0 and mp_stock > 0) else ""
+def save_df_to_excel_fast(sheets, file_or_buffer):
+    """
+    Write DataFrames to Excel extremely fast using native xlsxwriter
+    with constant_memory=True. Handles filenames or in-memory BytesIO buffers.
+    """
+    import xlsxwriter
+    import pandas as pd
+    
+    # Initialize workbook
+    workbook = xlsxwriter.Workbook(file_or_buffer, {'constant_memory': True})
+    for sheet_name, df in sheets.items():
+        if df.empty:
+            continue
+        worksheet = workbook.add_worksheet(sheet_name[:31]) # Excel sheet name limit is 31 chars
+        
+        # Write headers
+        headers = list(df.columns)
+        worksheet.write_row(0, 0, headers)
+        
+        # Vectorized replacement of NA values
+        df_clean = df.fillna("")
+        
+        # Write data rows
+        for row_idx, row in enumerate(df_clean.values.tolist(), start=1):
+            worksheet.write_row(row_idx, 0, row)
+            
+    workbook.close()
 
-            rows.append({
-                "Marketplace":          mp_name,
-                "SellerSku":            sku,
-                "TC SKU":               tc_sku,
-                "Product ID":           pid,
-                "Article No":           article_no,
-                "MP Status":            mp_status,
-                "TC Status":            _normalise_status(tc_status),
-                "e-com (Yes/No)":       ecom_yn,
-                "Launch Date":          launch_dt,
-                "Exclusion":            excl_lbl,
-                "ECOM Status":          ecom_st,
-                "Final Status":         final_status,
-                "Comments":             comment,
-                "Final Check":          str(final_check),
-                "Dual Status":          dual_status,
-                "Consolidated SUM QTY": consolidated_tc,
-                "MP Stock":             mp_stock,
-                "TC Stock":             tc_stock,
-                "Reserved Stock":       reserved,
-                "Max 0":                max_0,
-                "Stock Check":          str(stock_check),
-                "Remarks":              remarks,
-                "Max Setup":            max_action,
-                "Update 0":             push_0,
-            })
-
-    return pd.DataFrame(rows) if rows else pd.DataFrame()

@@ -20,37 +20,23 @@ def _read_file(file, header_row=0, skiprows=None, usecols=None):
     if file is None:
         return pd.DataFrame()
     name = file.name.lower()
-    file.seek(0)
     try:
+        file.seek(0)
+        raw_bytes = file.read()
+        file.seek(0)
+        bio = io.BytesIO(raw_bytes)
         if name.endswith(".csv"):
-            df = pd.read_csv(file, header=header_row,
+            return pd.read_csv(bio, header=header_row,
                              skiprows=skiprows, dtype=str, usecols=usecols)
-            file.seek(0)
-            return df
         try:
             import python_calamine
-            df = pd.read_excel(file, header=header_row,
+            return pd.read_excel(bio, header=header_row,
                                skiprows=skiprows, dtype=str, engine="calamine", usecols=usecols)
-            file.seek(0)
-            return df
         except ImportError:
-            df = pd.read_excel(file, header=header_row,
+            return pd.read_excel(bio, header=header_row,
                                skiprows=skiprows, dtype=str, usecols=usecols)
-            file.seek(0)
-            return df
     except Exception:
-        try:
-            file.seek(0)
-            raw = file.read()
-            file.seek(0)
-            if name.endswith(".csv"):
-                return pd.read_csv(io.BytesIO(raw), header=header_row,
-                                   skiprows=skiprows, dtype=str, usecols=usecols)
-            else:
-                return pd.read_excel(io.BytesIO(raw), header=header_row,
-                                     skiprows=skiprows, dtype=str, usecols=usecols)
-        except Exception:
-            return pd.DataFrame()
+        return pd.DataFrame()
 
 
 def _read_zip(file, header_row=0, skiprows=None):
