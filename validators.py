@@ -39,6 +39,20 @@ def _normalise_status(status):
     return _safe_str(status)
 
 
+def _standardise_raw_ecom_series(ser):
+    s = ser.fillna("").astype(str).str.strip().str.upper()
+    yes_mask = s.isin(["YES", "Y", "ACTIVE"])
+    no_mask = s.isin(["NO", "N", "INACTIVE"])
+    off_mask = s == "OFF"
+    na_mask = s.isin(["#N/A", ""])
+    default_vals = ser.fillna("").astype(str).str.strip()
+    return np.select(
+        [yes_mask, no_mask, off_mask, na_mask],
+        ["Yes", "No", "OFF", "#N/A"],
+        default=default_vals
+    )
+
+
 def _is_valid_sku(sku):
     """Seller SKU must be exactly 13 digits."""
     return bool(re.fullmatch(r'\d{13}', _safe_str(sku)))
@@ -210,6 +224,19 @@ def _build_launch_map(zecom):
     return launch_map
 
 
+def _build_future_launch_map(zecom):
+    if zecom.empty or "Article No" not in zecom.columns or "Future Launch" not in zecom.columns:
+        return {}
+    arts = zecom["Article No"].tolist()
+    fl_vals = zecom["Future Launch"].tolist()
+    fl_map = {}
+    for art, val in zip(arts, fl_vals):
+        art_norm = _normalise_article_no(art)
+        if art_norm:
+            fl_map[art_norm] = bool(val)
+    return fl_map
+
+
 def _needs_buffer(mp_name):
     """Buffer -1 stock only for Lazada PH and TikTok MY."""
     return mp_name in ("Lazada PH", "TikTok MY")
@@ -346,6 +373,9 @@ def run_sku_validation(data, country):
         df["SKU"] = df["SKU"].apply(_safe_str)
         df["SKU_clean"] = df["SKU"].apply(_clean_sku)
 
+        # 1. Filter out SKUs longer than 13 characters
+        df = df[df["SKU_clean"].str.len() <= 13]
+
         tc_df = pd.DataFrame.from_dict(tc_map, orient="index")
         stock_df = pd.DataFrame.from_dict(stock_map, orient="index")
         
@@ -355,13 +385,29 @@ def run_sku_validation(data, country):
         df = df.join(art_series, on="SKU_clean")
         df["Article No"] = df["Article No"].fillna("")
         
+        # Check if Future Launch is True
+        future_launch_map = _build_future_launch_map(zecom)
+        df["Future Launch"] = df["Article No"].map(future_launch_map).fillna(False)
+
+        # Join raw Ecom Status
         df = df.join(ecom_series, on="Article No")
-        df["Ecom Status"] = df["Ecom Status"].fillna("Inactive")
+        
+        # Resolve e-com (Yes/No) and ECOM Status columns
+        ecom_raw = df["Ecom Status"]
+        ecom_raw_clean = ecom_raw.fillna("").astype(str).str.strip()
+        ecom_raw_val = np.where((ecom_raw_clean == "") | (ecom_raw.isna()) | (df["Article No"] == ""), "#N/A", ecom_raw_clean)
+        ecom_raw_std = _standardise_raw_ecom_series(pd.Series(ecom_raw_val, index=df.index))
+        
+        df["e-com (Yes/No)"] = np.where(df["Future Launch"], "Future", ecom_raw_std)
+        df["ECOM Status"] = np.where(df["e-com (Yes/No)"] == "Yes", "Active", "Inactive")
         
         df = df.join(tc_df, on="SKU_clean")
         df["TC SKU"] = df["TC SKU"].fillna("")
         df["TC Status"] = df["TC Status"].fillna("Unknown")
         df["Max 0"] = df["Max 0"].fillna("No")
+        
+        # Keep track if SKU was found in TC Inventory
+        tc_found = df["SKU_clean"].isin(tc_df.index)
         
         df = df.join(stock_df, on="SKU_clean")
         df["TC Stock"] = df["TC Stock"].fillna(0.0)
@@ -399,15 +445,15 @@ def run_sku_validation(data, country):
 
         no_excl = ~has_excl
         
-        cond_ecom_no = no_excl & (df["Ecom Status"].str.startswith("Inactive"))
+        cond_ecom_no = no_excl & (df["ECOM Status"] == "Inactive")
         df.loc[cond_ecom_no, "Final Status"] = "Inactive"
         df.loc[cond_ecom_no, "Comments"] = "Due to Ecom No"
         
-        cond_stock_0 = no_excl & (~df["Ecom Status"].str.startswith("Inactive")) & (df["TC Stock"] == 0)
+        cond_stock_0 = no_excl & (df["ECOM Status"] == "Active") & (df["TC Stock"] == 0)
         df.loc[cond_stock_0, "Final Status"] = "Inactive"
         df.loc[cond_stock_0, "Comments"] = "Due to 0 Stock"
         
-        cond_active = no_excl & (~df["Ecom Status"].str.startswith("Inactive")) & (df["TC Stock"] != 0)
+        cond_active = no_excl & (df["ECOM Status"] == "Active") & (df["TC Stock"] != 0)
         df.loc[cond_active, "Final Status"] = "Active"
         df.loc[cond_active, "Comments"] = "Ecom Yes with Stock"
         
@@ -464,10 +510,12 @@ def run_sku_validation(data, country):
         df.loc[invalid_mask, "Max Setup"] = "#N/A"
         df.loc[invalid_mask, "Update 0"] = "#N/A"
 
+        # Apply TC Status and Remarks override for missing TC Status
+        df.loc[~tc_found, "TC Status"] = "#N/A"
+        df.loc[~tc_found, "Remarks"] = "Import"
+
         df["Marketplace"] = mp_name
         df["Seller SKU"] = df["SKU_orig"]
-        df["e-com (Yes/No)"] = np.where(df["Ecom Status"] == "Active", "Yes", "No")
-        df["ECOM Status"] = df["Ecom Status"]
 
         out_cols = [
             "Marketplace", "Seller SKU", "TC SKU", "Article No", "MP Status",
@@ -515,6 +563,9 @@ def run_pid_validation(data, country):
         df["SKU"] = df["SKU"].apply(_safe_str)
         df["SKU_clean"] = df["SKU"].apply(_clean_sku)
         
+        # 1. Filter out SKUs longer than 13 characters
+        df = df[df["SKU_clean"].str.len() <= 13]
+
         df["Product ID"] = df.get("Product ID", df["SKU"]).apply(_safe_str)
         df["MP Status"] = df["MP Status"].apply(_safe_str)
         df["MP Stock"] = pd.to_numeric(df["MP Stock"], errors="coerce").fillna(0.0)
@@ -527,13 +578,29 @@ def run_pid_validation(data, country):
         df = df.join(art_series, on="SKU_clean")
         df["Article No"] = df["Article No"].fillna("")
         
+        # Check if Future Launch is True
+        future_launch_map = _build_future_launch_map(zecom)
+        df["Future Launch"] = df["Article No"].map(future_launch_map).fillna(False)
+
+        # Join raw Ecom Status
         df = df.join(ecom_series, on="Article No")
-        df["Ecom Status"] = df["Ecom Status"].fillna("Inactive")
+        
+        # Resolve e-com (Yes/No) and ECOM Status columns
+        ecom_raw = df["Ecom Status"]
+        ecom_raw_clean = ecom_raw.fillna("").astype(str).str.strip()
+        ecom_raw_val = np.where((ecom_raw_clean == "") | (ecom_raw.isna()) | (df["Article No"] == ""), "#N/A", ecom_raw_clean)
+        ecom_raw_std = _standardise_raw_ecom_series(pd.Series(ecom_raw_val, index=df.index))
+        
+        df["e-com (Yes/No)"] = np.where(df["Future Launch"], "Future", ecom_raw_std)
+        df["ECOM Status"] = np.where(df["e-com (Yes/No)"] == "Yes", "Active", "Inactive")
         
         df = df.join(tc_df, on="SKU_clean")
         df["TC SKU"] = df["TC SKU"].fillna("")
         df["TC Status"] = df["TC Status"].fillna("Unknown")
         df["Max 0"] = df["Max 0"].fillna("No")
+        
+        # Keep track if SKU was found in TC Inventory
+        tc_found = df["SKU_clean"].isin(tc_df.index)
         
         df = df.join(stock_df, on="SKU_clean")
         df["TC Stock"] = df["TC Stock"].fillna(0.0)
@@ -546,7 +613,7 @@ def run_pid_validation(data, country):
         df["Exclusion"] = excl_art.fillna(excl_sku).fillna("")
         
         df["SKU Valid"] = df["SKU_clean"].apply(_is_valid_sku)
-        df["Ecom Logic"] = np.where(df["Ecom Status"].str.startswith("Inactive"), "Inactive", df["Ecom Status"])
+        df["Ecom Logic"] = df["ECOM Status"]
 
         # Dual Status
         pid_active = df[df["Ecom Logic"] == "Active"]["Product ID"].unique()
@@ -616,8 +683,8 @@ def run_pid_validation(data, country):
         df.loc[no_excl & comment_is_ecom_stock & (df["Max 0"] == "Yes"), "Max Setup"] = "Remove max"
         
         comment_is_stock_0 = df["Comments"] == "Due to 0 Stock"
-        ecom_yn_yes = df["Ecom Status"] == "Active"
-        ecom_yn_no = df["Ecom Status"].isin(["No", "Inactive", ""])
+        ecom_yn_yes = df["ECOM Status"] == "Active"
+        ecom_yn_no = df["ECOM Status"] == "Inactive"
         df.loc[no_excl & comment_is_stock_0 & ecom_yn_yes & (df["Max 0"] == "Yes"), "Max Setup"] = "Remove max"
         df.loc[no_excl & comment_is_stock_0 & ecom_yn_no & (df["Max 0"] == "No"), "Max Setup"] = "Set max"
 
@@ -679,10 +746,12 @@ def run_pid_validation(data, country):
         df.loc[invalid_mask, "Max Setup"] = "#N/A"
         df.loc[invalid_mask, "Update 0"] = "#N/A"
 
+        # Apply TC Status and Remarks override for missing TC Status
+        df.loc[~tc_found, "TC Status"] = "#N/A"
+        df.loc[~tc_found, "Remarks"] = "Import"
+
         df["Marketplace"] = mp_name
         df["SellerSku"] = df["SKU_orig"]
-        df["e-com (Yes/No)"] = np.where(df["Ecom Status"] == "Active", "Yes", "No")
-        df["ECOM Status"] = df["Ecom Status"]
 
         out_cols = [
             "Marketplace", "SellerSku", "TC SKU", "Product ID", "Article No", "MP Status",

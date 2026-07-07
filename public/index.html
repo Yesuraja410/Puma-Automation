@@ -61,6 +61,16 @@
                             <option value="PH">Philippines (PH)</option>
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label for="status-channel">Select Channel</label>
+                        <select id="status-channel" class="form-select">
+                            <option value="all">All Channels</option>
+                            <option value="lazada">Lazada</option>
+                            <option value="shopee">Shopee</option>
+                            <option value="zalora">Zalora</option>
+                            <option value="tiktok" id="status-channel-tiktok-opt" style="display: none;">TikTok</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Order Validation Sidebar Config -->
@@ -130,13 +140,13 @@
                         <h2 class="card-title"><i class="fa-solid fa-file-arrow-up"></i> Upload Data Files</h2>
                         <form id="status-val-form" class="upload-form">
                             <!-- Lazada -->
-                            <div class="file-uploader-box">
+                            <div class="file-uploader-box" id="sv-lazada-wrapper">
                                 <label class="file-label">Lazada File (Excel/CSV)</label>
                                 <input type="file" id="sv-laz" class="file-input">
                             </div>
                             
                             <!-- Shopee -->
-                            <div class="file-uploader-grid">
+                            <div class="file-uploader-grid" id="sv-shopee-wrapper">
                                 <div class="file-uploader-box">
                                     <label class="file-label">Shopee Stock (ZIP/Excel)</label>
                                     <input type="file" id="sv-sh-stk" class="file-input">
@@ -148,7 +158,7 @@
                             </div>
 
                             <!-- Zalora -->
-                            <div class="file-uploader-grid">
+                            <div class="file-uploader-grid" id="sv-zalora-wrapper">
                                 <div class="file-uploader-box">
                                     <label class="file-label">Zalora Stock (Excel)</label>
                                     <input type="file" id="sv-zal-stk" class="file-input">

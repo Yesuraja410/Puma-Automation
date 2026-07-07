@@ -81,13 +81,22 @@ def _clean_sku(val):
 def _filter_13digit_skus(df, sku_col):
     if sku_col not in df.columns:
         return df
+    
+    import numpy as np
+    def clean_ser(ser):
+        s = ser.fillna("").astype(str).str.strip()
+        float_mask = s.str.match(r'^\d+\.0$', na=False)
+        return np.where(float_mask, s.str[:-2], s)
+
     parent_cols = [c for c in df.columns
                    if "parent" in c.lower() and "sku" in c.lower()]
     if parent_cols:
         df = df.copy()
-        mask_blank = df[sku_col].apply(_clean_sku) == ""
+        cleaned_sku = clean_ser(df[sku_col])
+        mask_blank = cleaned_sku == ""
         df.loc[mask_blank, sku_col] = df.loc[mask_blank, parent_cols[0]]
-    df[sku_col] = df[sku_col].apply(_clean_sku)
+        
+    df[sku_col] = clean_ser(df[sku_col])
     df = df[df[sku_col].str.fullmatch(r'\d{13}', na=False)].copy()
     return df
 
@@ -946,15 +955,21 @@ def load_tc_inventory(file):
     max_col = header_row_vals[max_col_idx] if max_col_idx is not None else None
 
     # Build output DataFrame
+    import numpy as np
     out = pd.DataFrame()
-    out["SKU"]       = df[custom_sku_col].apply(_clean_sku) if custom_sku_col in df.columns else ""
-    out["TC SKU"]    = df[ged_sku_col].apply(_safe_str) if ged_sku_col in df.columns else ""
-    out["TC Status"] = df[status_col].apply(_safe_str) if (status_col and status_col in df.columns) else "Unknown"
+    if custom_sku_col in df.columns:
+        s_sku = df[custom_sku_col].fillna("").astype(str).str.strip()
+        float_mask = s_sku.str.match(r'^\d+\.0$', na=False)
+        out["SKU"] = np.where(float_mask, s_sku.str[:-2], s_sku)
+    else:
+        out["SKU"] = ""
+        
+    out["TC SKU"] = df[ged_sku_col].fillna("").astype(str).str.strip() if ged_sku_col in df.columns else ""
+    out["TC Status"] = df[status_col].fillna("").astype(str).str.strip() if (status_col and status_col in df.columns) else "Unknown"
+    
     if max_col and max_col in df.columns:
-        out["Max Quantity"] = df[max_col].apply(_safe_str)
-        out["Max 0"] = out["Max Quantity"].apply(
-            lambda x: "Yes" if _safe_str(x) == "0" else "No"
-        )
+        out["Max Quantity"] = df[max_col].fillna("").astype(str).str.strip()
+        out["Max 0"] = np.where(out["Max Quantity"] == "0", "Yes", "No")
     else:
         out["Max Quantity"] = ""
         out["Max 0"]        = "No"
@@ -1169,12 +1184,7 @@ def load_zecom(file, country="PH"):
         col_l = col.lower()
         for mp_key, ecom_name in mp_keywords.items():
             if mp_key in col_l and ecom_name not in df.columns:
-                df[ecom_name] = df.apply(
-                    lambda row, c=col: _ecom_status_from_val(
-                        row[c], row["Future Launch"]
-                    ),
-                    axis=1,
-                )
+                df[ecom_name] = df[col].apply(_safe_str)
                 break
 
     # Slice only needed columns to keep memory low
@@ -1388,11 +1398,14 @@ def load_all_file(file, country):
                 break
     if "SKU" not in df.columns:
         return pd.DataFrame()
-    df["SKU"] = df["SKU"].apply(_clean_sku)
+    import numpy as np
+    s_sku = df["SKU"].fillna("").astype(str).str.strip()
+    float_mask = s_sku.str.match(r'^\d+\.0$', na=False)
+    df["SKU"] = np.where(float_mask, s_sku.str[:-2], s_sku)
     for num_col in ["TC Stock", "Reserved Stock"]:
         if num_col in df.columns:
             df[num_col] = pd.to_numeric(
-                df[num_col].apply(_safe_str), errors="coerce"
+                df[num_col].fillna("").astype(str).str.strip(), errors="coerce"
             ).fillna(0)
         else:
             df[num_col] = 0.0

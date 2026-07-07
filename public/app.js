@@ -115,16 +115,71 @@ function initTabNavigation() {
 
 // ================= EVENT LISTENERS =================
 function initEventListeners() {
-    // 1. Status Validation Country Dropdown: Show/Hide TikTok uploaders
+    // 1. Status Validation Country & Channel Dropdowns: Dynamic Visibility of Uploaders
     const statusCountrySelect = document.getElementById("status-country");
+    const statusChannelSelect = document.getElementById("status-channel");
+    const tiktokOpt = document.getElementById("status-channel-tiktok-opt");
     const svTiktokUploaders = document.getElementById("sv-tiktok-uploaders");
-    statusCountrySelect.addEventListener("change", () => {
-        if (statusCountrySelect.value === "MY") {
-            svTiktokUploaders.classList.remove("hidden");
+
+    function updateUploadersVisibility() {
+        const country = statusCountrySelect ? statusCountrySelect.value : "SG";
+        
+        // Show/hide TikTok option in the dropdown
+        if (country === "MY") {
+            if (tiktokOpt) tiktokOpt.style.display = "";
         } else {
-            svTiktokUploaders.classList.add("hidden");
+            if (tiktokOpt) tiktokOpt.style.display = "none";
+            if (statusChannelSelect && statusChannelSelect.value === "tiktok") {
+                statusChannelSelect.value = "all";
+            }
         }
-    });
+
+        const activeChannel = statusChannelSelect ? statusChannelSelect.value : "all";
+
+        // Lazada
+        const svLazadaWrapper = document.getElementById("sv-lazada-wrapper");
+        if (svLazadaWrapper) {
+            if (activeChannel === "all" || activeChannel === "lazada") {
+                svLazadaWrapper.classList.remove("hidden");
+            } else {
+                svLazadaWrapper.classList.add("hidden");
+            }
+        }
+
+        // Shopee
+        const svShopeeWrapper = document.getElementById("sv-shopee-wrapper");
+        if (svShopeeWrapper) {
+            if (activeChannel === "all" || activeChannel === "shopee") {
+                svShopeeWrapper.classList.remove("hidden");
+            } else {
+                svShopeeWrapper.classList.add("hidden");
+            }
+        }
+
+        // Zalora
+        const svZaloraWrapper = document.getElementById("sv-zalora-wrapper");
+        if (svZaloraWrapper) {
+            if (activeChannel === "all" || activeChannel === "zalora") {
+                svZaloraWrapper.classList.remove("hidden");
+            } else {
+                svZaloraWrapper.classList.add("hidden");
+            }
+        }
+
+        // TikTok
+        if (svTiktokUploaders) {
+            if (country === "MY" && (activeChannel === "all" || activeChannel === "tiktok")) {
+                svTiktokUploaders.classList.remove("hidden");
+            } else {
+                svTiktokUploaders.classList.add("hidden");
+            }
+        }
+    }
+
+    if (statusCountrySelect) statusCountrySelect.addEventListener("change", updateUploadersVisibility);
+    if (statusChannelSelect) statusChannelSelect.addEventListener("change", updateUploadersVisibility);
+    // Initial visibility state
+    updateUploadersVisibility();
 
     // 2. Order Validation: SLA Report Source selection toggle
     const slaSourceRadios = document.querySelectorAll("input[name='pending_source']");
