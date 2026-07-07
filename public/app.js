@@ -1,9 +1,63 @@
-// PUMA AUTOMATION SUITE JAVASCRIPT LOGIC
+let backendBaseUrl = ""; // defaults to relative path (Vercel)
 
 document.addEventListener("DOMContentLoaded", () => {
     initTabNavigation();
     initEventListeners();
+    initBackendSelector();
 });
+
+function initBackendSelector() {
+    const backendSelect = document.getElementById("backend-select");
+    if (backendSelect) {
+        const savedBackend = localStorage.getItem("puma-backend-pref");
+        if (savedBackend) {
+            backendSelect.value = savedBackend;
+            backendBaseUrl = savedBackend === "local" ? "http://127.0.0.1:5000" : "";
+        } else {
+            // Default to local to save the user from size limits
+            backendSelect.value = "local";
+            backendBaseUrl = "http://127.0.0.1:5000";
+            localStorage.setItem("puma-backend-pref", "local");
+        }
+        backendSelect.addEventListener("change", () => {
+            const val = backendSelect.value;
+            localStorage.setItem("puma-backend-pref", val);
+            backendBaseUrl = val === "local" ? "http://127.0.0.1:5000" : "";
+            checkBackendHealth();
+        });
+    }
+    checkBackendHealth();
+}
+
+async function checkBackendHealth() {
+    const indicator = document.getElementById("backend-indicator");
+    const statusText = document.getElementById("backend-status-text");
+    if (!indicator || !statusText) return;
+
+    indicator.className = "status-indicator offline";
+    statusText.innerText = "Checking...";
+
+    if (!backendBaseUrl) {
+        // Cloud mode
+        indicator.className = "status-indicator online";
+        statusText.innerText = "Cloud Connected";
+        return;
+    }
+
+    try {
+        const response = await fetch(`${backendBaseUrl}/api/health`, { method: "GET" });
+        if (response && response.ok) {
+            indicator.className = "status-indicator online";
+            statusText.innerText = "Local Connected";
+        } else {
+            indicator.className = "status-indicator offline";
+            statusText.innerText = "Local Offline (Start local server)";
+        }
+    } catch (e) {
+        indicator.className = "status-indicator offline";
+        statusText.innerText = "Local Offline (Start local server)";
+    }
+}
 
 // Stateless variables to hold session results in client-side memory
 let currentReportBase64 = null;
@@ -165,7 +219,7 @@ function initEventListeners() {
 // Base Fetch Function
 async function sendAPIRequest(url, formData, onLoadingMsg = "Processing...") {
     try {
-        const response = await fetch(url, {
+        const response = await fetch(backendBaseUrl + url, {
             method: "POST",
             body: formData
         });
@@ -487,7 +541,7 @@ async function testSMTPConnection() {
     testBtn.disabled = true;
 
     try {
-        const response = await fetch("/api/test-smtp", {
+        const response = await fetch(backendBaseUrl + "/api/test-smtp", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(cfg)
@@ -521,7 +575,7 @@ async function sendSingleSellerEmail(sellerName, idx) {
     sendBtn.disabled = true;
 
     try {
-        const response = await fetch("/api/send-email", {
+        const response = await fetch(backendBaseUrl + "/api/send-email", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -569,7 +623,7 @@ async function sendAllSellerEmails() {
         const info = currentSellerGroups[sellerName];
 
         try {
-            const response = await fetch("/api/send-email", {
+            const response = await fetch(backendBaseUrl + "/api/send-email", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -710,7 +764,7 @@ async function runListingQCSyncCompare() {
 
     try {
         // Send AJAX request with files in formData, and val_df inside JSON request
-        const response = await fetch("/api/listing-qc-compare", {
+        const response = await fetch(backendBaseUrl + "/api/listing-qc-compare", {
             method: "POST",
             body: fd
         });
@@ -729,7 +783,7 @@ async function runListingQCSyncCompare() {
         fdExtended.append("val_df_string", JSON.stringify(currentLQCValDf));
 
         // Re-send extended FormData
-        const responseExtended = await fetch("/api/listing-qc-compare", {
+        const responseExtended = await fetch(backendBaseUrl + "/api/listing-qc-compare", {
             method: "POST",
             body: fdExtended
         });

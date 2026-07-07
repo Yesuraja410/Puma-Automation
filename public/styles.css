@@ -120,6 +120,11 @@ body {
     box-shadow: 0 0 10px #10b981;
 }
 
+.status-indicator.offline {
+    background-color: #ef4444;
+    box-shadow: 0 0 10px #ef4444;
+}
+
 .status-text {
     font-size: 0.85rem;
     font-weight: 500;
