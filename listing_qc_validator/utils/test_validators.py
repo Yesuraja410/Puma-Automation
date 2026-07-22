@@ -313,5 +313,60 @@ class TestValidators(unittest.TestCase):
         self.assertEqual(color_records.iloc[0]["Reference Value"], "Black")
         self.assertEqual(color_records.iloc[0]["Match Status"], "Mismatch")
 
+    def test_post_qc_dataset_reconstruction(self):
+        # 1. Target sheet containing only SKU
+        target_df = pd.DataFrame([{"sku": "4069161482557"}, {"sku": "4069161482999"}, {"sku": "9999999999999"}])
+        
+        # 2. Live reports containing SKU 4069161482557 (but not 9999999999999)
+        live_df = pd.DataFrame([
+            {
+                "sku": "4069161482557",
+                "product_name": "Men's Live Shoes 404620_07",
+                "color_name": "Black",
+                "size": "42",
+                "price": "89.99",
+                "quantity": "25",
+                "images": "http://example.com/img1.jpg",
+                "size_chart": "http://example.com/chart.jpg"
+            },
+            {
+                "sku": "4069161482999",
+                "product_name": "Kids Grey Shirt 531103_03",
+                "color_name": "Grey",
+                "size": "S",
+                "price": "49.99",
+                "quantity": "15",
+                "images": "http://example.com/img2.jpg",
+                "size_chart": "http://example.com/chart2.jpg"
+            }
+        ])
+        
+        # Run validation
+        exc_df, val_df, logs = validate_dataframe(
+            target_df,
+            qc_stage="Post QC",
+            channel="Shopee PH",
+            content_df=self.mock_content_df,
+            zecom_df=self.mock_zecom_df,
+            live_df=live_df
+        )
+        
+        # Verify dataset was reconstructed
+        self.assertEqual(len(val_df), 3) # 2 live + 1 missing
+        
+        # Verify first row (live match)
+        row1 = val_df[val_df["sku"] == "4069161482557"].iloc[0]
+        self.assertEqual(row1["product_name"], "Men's Live Shoes 404620_07")
+        self.assertEqual(row1["article_number"], "404620_07") # Sourced from Content file lookup
+        self.assertEqual(row1["ecommerce_status"], "Yes") # Sourced from Zecom
+        self.assertEqual(row1["size"], "42")
+        self.assertEqual(row1["price"], "89.99")
+        self.assertEqual(row1["quantity"], "25")
+        
+        # Verify missing SKU row
+        missing_sku_exc = exc_df[exc_df["Source File"] == "Target Sheet (Not in Live Report)"]
+        self.assertFalse(missing_sku_exc.empty)
+        self.assertIn("was not found in any Live Marketplace Reports", missing_sku_exc.iloc[0]["Message"])
+
 if __name__ == '__main__':
     unittest.main()

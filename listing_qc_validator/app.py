@@ -377,6 +377,16 @@ if target_loaded:
                         all_standardized.append(std_df)
                     combined_df = pd.concat(all_standardized, ignore_index=True)
                     
+                    live_df = None
+                    if qc_stage == "Post QC":
+                        if not live_files:
+                            st.error("⚠️ Please upload at least one Live Store Marketplace Report first under 'Upload Live Marketplace Reports'.")
+                            st.stop()
+                        live_df = process_live_files(live_files, channel)
+                        if live_df.empty:
+                            st.error("⚠️ Could not parse any valid listing data from the Live Marketplace Reports.")
+                            st.stop()
+
                     # Execute validation rules
                     exc_df, val_df, logs = validate_dataframe(
                         combined_df, 
@@ -386,7 +396,8 @@ if target_loaded:
                         zecom_df=zecom_df,
                         check_live_images=check_live_images,
                         allowed_genders=custom_genders,
-                        allowed_statuses=custom_statuses
+                        allowed_statuses=custom_statuses,
+                        live_df=live_df
                     )
                     
                     st.session_state.val_df = val_df

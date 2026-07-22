@@ -1452,6 +1452,16 @@ elif task == "Listing QC":
                                 all_standardized.append(std_df)
                             combined_df = pd.concat(all_standardized, ignore_index=True)
                             
+                            live_df = None
+                            if lqc_qc_stage == "Post QC":
+                                if not lqc_live_files:
+                                    st.error("⚠️ Please upload at least one Live Store Marketplace Report in the sidebar first under 'Upload Live Reports'.")
+                                    st.stop()
+                                live_df = lqc_process_live_files(lqc_live_files, lqc_channel)
+                                if live_df.empty:
+                                    st.error("⚠️ Could not parse any valid listing data from the Live Marketplace Reports.")
+                                    st.stop()
+                            
                             exc_df, val_df, logs = lqc_validate_dataframe(
                                 combined_df, 
                                 qc_stage=lqc_qc_stage,
@@ -1460,7 +1470,8 @@ elif task == "Listing QC":
                                 zecom_df=zecom_df,
                                 check_live_images=lqc_check_live_images,
                                 allowed_genders=lqc_custom_genders,
-                                allowed_statuses=lqc_custom_statuses
+                                allowed_statuses=lqc_custom_statuses,
+                                live_df=live_df
                             )
                             
                             st.session_state.lqc_val_df = val_df

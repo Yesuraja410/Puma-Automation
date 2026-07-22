@@ -5,6 +5,9 @@ import urllib.parse
 import pandas as pd
 import numpy as np
 
+def is_empty(val) -> bool:
+    return val is None or pd.isna(val) or str(val).strip() == ""
+
 # Synonyms for auto-mapping columns
 COLUMN_SYNONYMS = {
     "sku": [

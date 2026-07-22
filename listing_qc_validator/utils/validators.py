@@ -649,6 +649,20 @@ def validate_row_post(
     Validates a single row for Post QC.
     Inherits Internal QC checks, then checks Images and Size Chart columns.
     """
+    # Check if this row is a missing SKU not found in live report
+    if row.get("_source_file") == "Target Sheet (Not in Live Report)":
+        sku_val = row.get("sku", "")
+        return [{
+            "Source File": "Target Sheet (Not in Live Report)",
+            "Row Number": 0,
+            "Article Number": row.get("article_number", "MISSING"),
+            "Product Name": "MISSING",
+            "Field": "SKU",
+            "Value": sku_val,
+            "Severity": "Error",
+            "Message": f"SKU '{sku_val}' is defined in target listing sheets but was not found in any Live Marketplace Reports (listing has not been published or has been deleted)."
+        }]
+
     exceptions = validate_row_internal(row, idx, channel, content_maps, zecom_maps, allowed_genders, allowed_statuses)
     
     sku_val = row.get("_cleaned_sku") if "_cleaned_sku" in row else _clean_sku(row.get("sku", ""))
@@ -725,21 +739,117 @@ def validate_dataframe(
     check_live_images: bool = False, 
     allowed_genders: List[str] = ALLOWED_GENDERS, 
     allowed_statuses: List[str] = ALLOWED_STATUSES,
-    is_live_report: bool = False
+    is_live_report: bool = False,
+    live_df: pd.DataFrame = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
     """
     Validates a whole standardized DataFrame with UK, US, Russian size and zEcom RRP rules.
     """
     df = df.copy()
-    df["_is_live_report"] = is_live_report
     logs = []
     logs.append(f"Starting validation run at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logs.append(f"Validation Stage: {qc_stage} | Target Channel: {channel}")
-    logs.append(f"Dataset contains {len(df)} records.")
     
     content_maps = build_content_maps(content_df)
-    logs.append("Content File size mappings built successfully.")
     zecom_maps = build_zecom_maps(zecom_df, channel)
+
+    if qc_stage == "Post QC" and live_df is not None and not live_df.empty:
+        logs.append("Reconstructing validation dataset for Post QC stage using Live Marketplace Reports...")
+        
+        # 1. Get unique SKUs from the target sheet (df)
+        target_skus = set(df["sku"].dropna().astype(str).str.strip().apply(_clean_sku))
+        logs.append(f"Target sheet contains {len(target_skus)} target SKUs.")
+        
+        # 2. Extract reference maps
+        sku_to_article = content_maps[0] if content_maps else {}
+        article_to_launchdate, article_to_ecomstatus, _ = zecom_maps if zecom_maps else (None, None, None)
+        
+        # 3. Construct post_qc_records by mapping live_df columns for target_skus
+        post_qc_records = []
+        found_skus = set()
+        
+        # Clean SKUs in live_df
+        live_df_copy = live_df.copy()
+        live_df_copy["_cleaned_sku"] = live_df_copy["sku"].dropna().astype(str).str.strip().apply(_clean_sku)
+        
+        for _, row in live_df_copy.iterrows():
+            l_sku = row["_cleaned_sku"]
+            if l_sku in target_skus:
+                found_skus.add(l_sku)
+                
+                # Fetch Article No from Content File
+                ref_art = sku_to_article.get(l_sku, "")
+                
+                # Fetch ecom status and launch date from Zecom File using Article No
+                ref_status = ""
+                ref_launch = ""
+                if ref_art:
+                    norm_ref_art = _normalise_article_no(ref_art)
+                    if article_to_ecomstatus:
+                        ref_status = article_to_ecomstatus.get(norm_ref_art, "")
+                    if article_to_launchdate:
+                        ref_launch = article_to_launchdate.get(norm_ref_art, "")
+                
+                post_qc_records.append({
+                    "sku": l_sku,
+                    "article_number": ref_art,
+                    "ecommerce_status": ref_status,
+                    "launch_date": ref_launch,
+                    "gender": "",
+                    "product_name": row.get("product_name", ""),
+                    "color_name": row.get("color_name", ""),
+                    "size": row.get("size", ""),
+                    "price": row.get("price", ""),
+                    "quantity": row.get("quantity", ""),
+                    "images": row.get("images", ""),
+                    "size_chart": row.get("size_chart", ""),
+                    "_source_file": row.get("_source_file", "Live Marketplace Report"),
+                    "_original_row_number": row.get("_original_row_number", len(post_qc_records) + 2)
+                })
+                
+        # Handle target SKUs not found in the Live Reports
+        missing_skus = target_skus - found_skus
+        for m_sku in sorted(missing_skus):
+            # Fetch Article No from Content File
+            ref_art = sku_to_article.get(m_sku, "")
+            ref_status = ""
+            ref_launch = ""
+            if ref_art:
+                norm_ref_art = _normalise_article_no(ref_art)
+                if article_to_ecomstatus:
+                    ref_status = article_to_ecomstatus.get(norm_ref_art, "")
+                if article_to_launchdate:
+                    ref_launch = article_to_launchdate.get(norm_ref_art, "")
+                    
+            post_qc_records.append({
+                "sku": m_sku,
+                "article_number": ref_art,
+                "ecommerce_status": ref_status,
+                "launch_date": ref_launch,
+                "gender": "",
+                "product_name": "",
+                "color_name": "",
+                "size": "",
+                "price": "",
+                "quantity": "",
+                "images": "",
+                "size_chart": "",
+                "_source_file": "Target Sheet (Not in Live Report)",
+                "_original_row_number": 0
+            })
+            
+        if post_qc_records:
+            df = pd.DataFrame(post_qc_records)
+            logs.append(f"Reconstructed validation dataset has {len(df)} records ({len(found_skus)} found in Live Reports, {len(missing_skus)} missing).")
+        else:
+            logs.append("Warning: No target SKUs found in Live Marketplace Reports.")
+            df = pd.DataFrame(columns=["sku", "article_number", "ecommerce_status", "launch_date", "gender", "product_name", "color_name", "size", "price", "quantity", "images", "size_chart"])
+            
+        is_live_report = True
+
+    df["_is_live_report"] = is_live_report
+    logs.append(f"Dataset contains {len(df)} records.")
+    logs.append("Content File size mappings built successfully.")
     logs.append(f"zEcom File status and RRP price mappings built successfully.")
     if zecom_df is not None and hasattr(zecom_df, "attrs") and "selected_sheet" in zecom_df.attrs:
         logs.append(f"Loaded zEcom sheet '{zecom_df.attrs['selected_sheet']}' (available: {zecom_df.attrs['sheet_names']}) for country '{zecom_df.attrs['passed_country']}'.")
