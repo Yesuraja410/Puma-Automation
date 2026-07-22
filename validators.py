@@ -206,15 +206,43 @@ def _build_excl_map(exclusion):
     return excl_map
 
 
-def _build_launch_map(zecom):
+def _build_launch_map(zecom, mp_name):
     if zecom.empty or "Article No" not in zecom.columns:
         return {}
-    if "Launch Date" not in zecom.columns:
+        
+    mp_lower = mp_name.lower()
+    candidates = []
+    if "lazada" in mp_lower or "shopee" in mp_lower:
+        candidates = ["LAZ & SHP Launch Date", "Lazada & Shopee Launch Dates"]
+    elif "zalora" in mp_lower:
+        candidates = ["Tiktok & Zalora Launch Dates", "ZAL Launch Date", "ZAL & TK Launch Date", "ZAL & TK\nLaunch Date"]
+    elif "tiktok" in mp_lower:
+        candidates = ["Tiktok & Zalora Launch Dates", "ZAL & TK Launch Date", "ZAL & TK\nLaunch Date", "TKTK Launch Date"]
+        
+    col_name = None
+    for c in candidates:
+        if c in zecom.columns:
+            col_name = c
+            break
+            
+    if not col_name:
+        for c in ["Launch Date", "LaunchDate", "Launch_Date"]:
+            if c in zecom.columns:
+                col_name = c
+                break
+                
+    if not col_name:
+        for c in zecom.columns:
+            c_norm = c.lower().replace(" ", "").replace("_", "").replace("-", "")
+            if "launchdate" in c_norm:
+                col_name = c
+                break
+                
+    if not col_name:
         return {}
 
     arts = zecom["Article No"].tolist()
-    # Vectorized date format to string, fallback to empty string
-    formatted_dates = pd.to_datetime(zecom["Launch Date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna("").tolist()
+    formatted_dates = pd.to_datetime(zecom[col_name], errors="coerce").dt.strftime("%Y-%m-%d").fillna("").tolist()
 
     launch_map = {}
     for art, formatted_ld in zip(arts, formatted_dates):
@@ -224,22 +252,31 @@ def _build_launch_map(zecom):
     return launch_map
 
 
-def _build_future_launch_map(zecom):
-    if zecom.empty or "Article No" not in zecom.columns or "Future Launch" not in zecom.columns:
+def _build_future_launch_map(zecom, mp_name):
+    if zecom.empty or "Article No" not in zecom.columns:
         return {}
-    arts = zecom["Article No"].tolist()
-    fl_vals = zecom["Future Launch"].tolist()
+        
+    launch_map = _build_launch_map(zecom, mp_name)
+    if not launch_map:
+        return {}
+        
+    today = pd.Timestamp.today().normalize()
     fl_map = {}
-    for art, val in zip(arts, fl_vals):
-        art_norm = _normalise_article_no(art)
-        if art_norm:
-            fl_map[art_norm] = bool(val)
+    for art, ld in launch_map.items():
+        if ld:
+            try:
+                d = pd.to_datetime(ld)
+                fl_map[art] = bool(pd.notna(d) and d > today)
+            except Exception:
+                fl_map[art] = False
+        else:
+            fl_map[art] = False
     return fl_map
 
 
 def _needs_buffer(mp_name):
-    """Buffer -1 stock only for Lazada PH and TikTok MY."""
-    return mp_name in ("Lazada PH", "TikTok MY")
+    """Buffer -1 stock only for Lazada PH, TikTok MY, and Zalora PH."""
+    return mp_name in ("Lazada PH", "TikTok MY", "Zalora PH")
 
 
 # ── Exclusion override ────────────────────────────────────────────────────────
@@ -352,7 +389,6 @@ def run_sku_validation(data, country):
     excl_map    = _build_excl_map(exclusion)
     article_map = _build_article_map(content)
     tc_map      = _build_tc_map(tc_inv)
-    launch_map  = _build_launch_map(zecom)
 
     mp_sources = {
         "Lazada " + country: data.get("lazada", pd.DataFrame()),
@@ -367,6 +403,8 @@ def run_sku_validation(data, country):
         apply_buffer = _needs_buffer(mp_name)
         ecom_map  = _build_ecom_map(zecom, mp_name)
         stock_map = _build_stock_map(all_df, apply_buffer)
+        launch_map = _build_launch_map(zecom, mp_name)
+        future_launch_map = _build_future_launch_map(zecom, mp_name)
 
         df = df.copy()
         df["SKU_orig"] = df["SKU"]
@@ -386,7 +424,6 @@ def run_sku_validation(data, country):
         df["Article No"] = df["Article No"].fillna("")
         
         # Check if Future Launch is True
-        future_launch_map = _build_future_launch_map(zecom)
         df["Future Launch"] = df["Article No"].map(future_launch_map).fillna(False)
 
         # Join raw Ecom Status
@@ -421,8 +458,15 @@ def run_sku_validation(data, country):
         
         df["SKU Valid"] = df["SKU_clean"].apply(_is_valid_sku)
         
-        df["MP Status"] = df["MP Status"].apply(_safe_str)
-        df["MP Stock"] = pd.to_numeric(df["MP Stock"], errors="coerce").fillna(0.0)
+        if "MP Status" not in df.columns:
+            df["MP Status"] = "Unknown"
+        else:
+            df["MP Status"] = df["MP Status"].apply(_safe_str)
+            
+        if "MP Stock" not in df.columns:
+            df["MP Stock"] = 0.0
+        else:
+            df["MP Stock"] = pd.to_numeric(df["MP Stock"], errors="coerce").fillna(0.0)
 
         df["Final Status"] = ""
         df["Comments"] = ""
@@ -541,7 +585,6 @@ def run_pid_validation(data, country):
     excl_map    = _build_excl_map(exclusion)
     article_map = _build_article_map(content)
     tc_map      = _build_tc_map(tc_inv)
-    launch_map  = _build_launch_map(zecom)
 
     mp_sources = {
         "Shopee " + country: data.get("shopee", pd.DataFrame()),
@@ -557,6 +600,8 @@ def run_pid_validation(data, country):
         apply_buffer = _needs_buffer(mp_name)
         ecom_map  = _build_ecom_map(zecom, mp_name)
         stock_map = _build_stock_map(all_df, apply_buffer)
+        launch_map = _build_launch_map(zecom, mp_name)
+        future_launch_map = _build_future_launch_map(zecom, mp_name)
 
         df = df.copy()
         df["SKU_orig"] = df["SKU"]
@@ -567,8 +612,15 @@ def run_pid_validation(data, country):
         df = df[df["SKU_clean"].str.len() <= 13]
 
         df["Product ID"] = df.get("Product ID", df["SKU"]).apply(_safe_str)
-        df["MP Status"] = df["MP Status"].apply(_safe_str)
-        df["MP Stock"] = pd.to_numeric(df["MP Stock"], errors="coerce").fillna(0.0)
+        if "MP Status" not in df.columns:
+            df["MP Status"] = "Unknown"
+        else:
+            df["MP Status"] = df["MP Status"].apply(_safe_str)
+            
+        if "MP Stock" not in df.columns:
+            df["MP Stock"] = 0.0
+        else:
+            df["MP Stock"] = pd.to_numeric(df["MP Stock"], errors="coerce").fillna(0.0)
 
         tc_df = pd.DataFrame.from_dict(tc_map, orient="index")
         stock_df = pd.DataFrame.from_dict(stock_map, orient="index")
@@ -579,7 +631,6 @@ def run_pid_validation(data, country):
         df["Article No"] = df["Article No"].fillna("")
         
         # Check if Future Launch is True
-        future_launch_map = _build_future_launch_map(zecom)
         df["Future Launch"] = df["Article No"].map(future_launch_map).fillna(False)
 
         # Join raw Ecom Status

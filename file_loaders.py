@@ -1147,30 +1147,6 @@ def load_zecom(file, country="PH"):
         df = df[df["Article No"].apply(_safe_str) != ""].copy()
         df = df.reset_index(drop=True)
 
-    # Rename Launch Date column
-    launch_col = None
-    for c in ["Launch Dates", "Launch Date", "LaunchDate", "Launch"]:
-        if c in df.columns:
-            launch_col = c
-            break
-    if launch_col is None:
-        for c in df.columns:
-            if "launch" in c.lower():
-                launch_col = c
-                break
-    if launch_col and launch_col != "Launch Date":
-        df = df.rename(columns={launch_col: "Launch Date"})
-
-    # Future launch flag
-    today = pd.Timestamp.today().normalize()
-    if "Launch Date" in df.columns:
-        df["Launch Date"] = pd.to_datetime(df["Launch Date"], errors="coerce")
-        df["Future Launch"] = df["Launch Date"].apply(
-            lambda d: True if pd.notna(d) and d > today else False
-        )
-    else:
-        df["Future Launch"] = False
-
     # Build standardised Ecom_ columns
     mp_keywords = {
         "lazada":  "Ecom_Lazada",
@@ -1179,7 +1155,7 @@ def load_zecom(file, country="PH"):
         "tiktok":  "Ecom_TikTok",
     }
     for col in df.columns:
-        if col in ("Article No", "Launch Date", "Future Launch"):
+        if col == "Article No" or "launch" in col.lower():
             continue
         col_l = col.lower()
         for mp_key, ecom_name in mp_keywords.items():
@@ -1187,9 +1163,10 @@ def load_zecom(file, country="PH"):
                 df[ecom_name] = df[col].apply(_safe_str)
                 break
 
-    # Slice only needed columns to keep memory low
+    # Keep all columns containing "launch", "Article No", and standard Ecom_ columns
+    launch_cols = [c for c in df.columns if "launch" in c.lower()]
     ecom_cols = [c for c in df.columns if c.startswith("Ecom_")]
-    keep_cols = ["Article No", "Launch Date", "Future Launch"] + ecom_cols
+    keep_cols = ["Article No"] + launch_cols + ecom_cols
     keep_cols = [c for c in keep_cols if c in df.columns]
     return df[keep_cols].copy()
 
