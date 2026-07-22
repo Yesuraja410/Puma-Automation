@@ -163,7 +163,7 @@ def _build_launch_map(zecom):
 
 
 def _needs_buffer(mp_name):
-    return mp_name in ("Lazada PH", "TikTok MY")
+    return mp_name in ("Lazada PH", "TikTok MY", "Zalora PH")
 
 
 def generate_status_report(data, country):
