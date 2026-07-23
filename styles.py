@@ -9,68 +9,102 @@ def inject_css():
         font-family: 'IBM Plex Sans', sans-serif;
     }
 
+    /* Tighten page margins and remove unnecessary empty space */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        max-width: 96% !important;
+    }
+
     [data-testid="stAppViewContainer"],
     [data-testid="stMain"],
     [data-testid="stHeader"],
     .stApp {
-        background: #F8FAFF !important;
-        color: #1E1B4B !important;
+        background: #F5F5F5 !important;
+        color: #1C1C1C !important;
     }
 
     section[data-testid="stSidebar"] {
-        background: #EEF2FF;
-        border-right: 1px solid #C7D2FE;
+        background: #111111 !important;
+        border-right: 1px solid #222222 !important;
     }
 
     section[data-testid="stSidebar"] .stSelectbox label,
     section[data-testid="stSidebar"] .stFileUploader label,
     section[data-testid="stSidebar"] h2,
     section[data-testid="stSidebar"] h3 {
-        color: #3730A3 !important;
+        color: #D90429 !important;
         font-size: 0.82rem;
-        font-weight: 600;
+        font-weight: 700;
         letter-spacing: 0.05em;
         text-transform: uppercase;
     }
 
+    /* Style widgets inside the black sidebar to look premium */
+    section[data-testid="stSidebar"] div[data-baseweb="select"] {
+        background-color: #222222 !important;
+        border: 1px solid #333333 !important;
+        border-radius: 6px;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="select"] span {
+        color: #ffffff !important;
+    }
+    section[data-testid="stSidebar"] .streamlit-expanderHeader {
+        background-color: #222222 !important;
+        color: #ffffff !important;
+        border: 1px solid #333333 !important;
+        border-radius: 6px;
+        margin-bottom: 4px;
+    }
+    section[data-testid="stSidebar"] .streamlit-expanderContent {
+        background-color: #1a1a1a !important;
+        border-left: 1px solid #333333;
+        border-right: 1px solid #333333;
+        border-bottom: 1px solid #333333;
+        color: #ffffff;
+    }
+
     [data-testid="metric-container"] {
         background: #ffffff;
-        border: 1px solid #C7D2FE;
+        border: 1px solid #E5E5E5;
         border-radius: 8px;
         padding: 12px 16px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 
     [data-testid="metric-container"] label {
-        color: #3730A3 !important;
+        color: #1C1C1C !important;
+        font-weight: 600;
         font-size: 0.75rem !important;
     }
 
     [data-testid="metric-container"] [data-testid="stMetricValue"] {
-        color: #4F46E5 !important;
+        color: #D90429 !important;
         font-family: 'IBM Plex Mono', monospace;
     }
 
     .stTabs [data-baseweb="tab-list"] {
-        background: #EEF2FF;
+        background: #E5E5E5;
         border-radius: 8px;
         padding: 4px;
     }
 
     .stTabs [data-baseweb="tab"] {
-        color: #3730A3;
+        color: #1C1C1C;
         font-weight: 600;
         font-size: 0.82rem;
     }
 
     .stTabs [aria-selected="true"] {
-        color: #4F46E5 !important;
+        color: #D90429 !important;
         background: #ffffff !important;
         border-radius: 6px;
     }
 
     .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #4F46E5, #3730A3);
+        background: linear-gradient(135deg, #D90429, #A3001A);
         color: white;
         border: none;
         border-radius: 6px;
@@ -80,24 +114,24 @@ def inject_css():
     }
 
     .stButton > button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #6366F1, #4F46E5);
+        background: linear-gradient(135deg, #FF1E43, #D90429);
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        box-shadow: 0 4px 12px rgba(217, 4, 41, 0.3);
     }
 
     .stDataFrame {
-        border: 1px solid #C7D2FE;
+        border: 1px solid #E5E5E5;
         border-radius: 8px;
     }
 
     h1 {
-        color: #312E81 !important;
+        color: #1C1C1C !important;
         font-weight: 700 !important;
         letter-spacing: -0.02em !important;
     }
 
     h3 {
-        color: #312E81 !important;
+        color: #1C1C1C !important;
         font-weight: 600 !important;
         font-size: 1rem !important;
     }
@@ -105,7 +139,7 @@ def inject_css():
     .streamlit-expanderHeader {
         font-size: 0.85rem !important;
         font-weight: 600;
-        color: #312E81 !important;
+        color: #1C1C1C !important;
     }
 
     .stDownloadButton > button {
@@ -120,11 +154,11 @@ def inject_css():
         background: #16A34A;
     }
 
-    /* Style the file uploader dropzones to be bold indigo dashed */
+    /* Style the file uploader dropzones to be bold red dashed */
     [data-testid="stFileUploaderDropzone"] {
-        border: 2px dashed #4F46E5 !important;
+        border: 2px dashed #D90429 !important;
         border-radius: 8px;
-        background: #EEF2FF !important;
+        background: #FAF8F8 !important;
     }
     
     /* Listing QC Styles */
