@@ -187,11 +187,61 @@ def _build_excl_map(exclusion):
     excl_map = {}
     if exclusion is None or exclusion.empty:
         return excl_map
-    if "Article No" not in exclusion.columns:
+
+    # Candidates for the Article/ALU/Color No column
+    art_candidates = [
+        "Article No", "ALU_No", "ALU", "Aricle No", "Article Number", "Color No", "Color_No"
+    ]
+    
+    art_col = None
+    for c in art_candidates:
+        if c in exclusion.columns:
+            art_col = c
+            break
+            
+    if not art_col:
+        # Fallback to case-insensitive and loose match
+        for col in exclusion.columns:
+            col_lower = col.lower().replace(" ", "").replace("_", "").replace("-", "")
+            if col_lower in ["articleno", "aluno", "alu", "aricleno", "articlenumber", "colorno", "color_no"]:
+                art_col = col
+                break
+                
+    if not art_col:
+        # Final fallback: look for any column containing "article", "style", "alu", or "color"
+        for col in exclusion.columns:
+            col_l = col.lower()
+            if "article" in col_l or "style" in col_l or "alu" in col_l or "color" in col_l:
+                art_col = col
+                break
+
+    if not art_col:
         return excl_map
 
-    art_nos = exclusion["Article No"].tolist()
-    statuses = exclusion["Exclusion Status"].tolist() if "Exclusion Status" in exclusion.columns else ["Inactive"] * len(art_nos)
+    # Candidates for the Status column
+    status_col = None
+    for col in exclusion.columns:
+        if col == "Exclusion Status":
+            status_col = col
+            break
+    if not status_col:
+        for col in exclusion.columns:
+            col_l = col.lower()
+            if "exclusion status" in col_l:
+                status_col = col
+                break
+    if not status_col:
+        for col in exclusion.columns:
+            col_l = col.lower()
+            if "status" in col_l:
+                status_col = col
+                break
+
+    art_nos = exclusion[art_col].tolist()
+    if status_col:
+        statuses = exclusion[status_col].tolist()
+    else:
+        statuses = ["Inactive"] * len(art_nos)
 
     for raw_val, status in zip(art_nos, statuses):
         status_s = _safe_str(status)
