@@ -40,6 +40,8 @@ def _normalise_article_no(val):
     if not s:
         return ""
     s = s.strip().upper()
+    if s.endswith(".0"):
+        s = s[:-2]
     s = re.sub(r'[^A-Z0-9]+', '', s)
     return s
 
