@@ -872,29 +872,170 @@ def run_pid_validation(data, country):
 
 def save_df_to_excel_fast(sheets, file_or_buffer):
     """
-    Write DataFrames to Excel extremely fast using native xlsxwriter
-    with constant_memory=True. Handles filenames or in-memory BytesIO buffers.
+    Write DataFrames to Excel with auto-fitted column widths, center alignment,
+    bold light blue headers, and a Summary sheet styled as a Pivot Table.
     """
     import xlsxwriter
     import pandas as pd
+    import numpy as np
+
+    # 1. Generate Summary sheet from Remarks
+    all_remarks = []
+    for df in sheets.values():
+        if "Remarks" in df.columns:
+            all_remarks.extend(df["Remarks"].fillna("").astype(str).str.strip().tolist())
     
-    # Initialize workbook
-    workbook = xlsxwriter.Workbook(file_or_buffer, {'constant_memory': True})
-    for sheet_name, df in sheets.items():
-        if df.empty:
+    # Exclude empty values or common placeholders
+    clean_remarks = [r for r in all_remarks if r and r not in ("", "#N/A", "nan", "None")]
+    
+    from collections import Counter
+    counts = Counter(clean_remarks)
+    summary_rows = []
+    total_count = 0
+    for remark, cnt in counts.most_common():
+        summary_rows.append({
+            "Row Labels": remark,
+            "Count of Remarks": cnt
+        })
+        total_count += cnt
+        
+    if summary_rows:
+        summary_rows.append({
+            "Row Labels": "Grand Total",
+            "Count of Remarks": total_count
+        })
+    summary_df = pd.DataFrame(summary_rows)
+    
+    # 2. Re-order sheets so Summary is first (if summary has entries)
+    ordered_sheets = {}
+    if not summary_df.empty:
+        ordered_sheets["Summary"] = summary_df
+    for k, v in sheets.items():
+        ordered_sheets[k] = v
+
+    # 3. Create Workbook
+    workbook = xlsxwriter.Workbook(file_or_buffer, {'nan_inf_to_errors': True})
+    
+    # Define formats
+    header_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#DBEAFE',      # Light Blue background
+        'font_color': '#1E3A8A',    # Dark Blue text
+        'align': 'center',
+        'valign': 'vcenter',
+        'border': 1,
+        'border_color': '#93C5FD'
+    })
+    
+    header_left_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#DBEAFE',
+        'font_color': '#1E3A8A',
+        'align': 'left',
+        'valign': 'vcenter',
+        'border': 1,
+        'border_color': '#93C5FD'
+    })
+    
+    header_right_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#DBEAFE',
+        'font_color': '#1E3A8A',
+        'align': 'right',
+        'valign': 'vcenter',
+        'border': 1,
+        'border_color': '#93C5FD'
+    })
+
+    cell_format = workbook.add_format({
+        'align': 'center',
+        'valign': 'vcenter',
+        'border': 1,
+        'border_color': '#E5E7EB'
+    })
+
+    remarks_format = workbook.add_format({
+        'align': 'left',
+        'valign': 'vcenter',
+        'border': 1,
+        'border_color': '#E5E7EB'
+    })
+
+    right_format = workbook.add_format({
+        'align': 'right',
+        'valign': 'vcenter',
+        'border': 1,
+        'border_color': '#E5E7EB'
+    })
+
+    total_left_format = workbook.add_format({
+        'bold': True,
+        'border': 1,
+        'border_color': '#E5E7EB',
+        'bg_color': '#F3F4F6',
+        'align': 'left'
+    })
+    
+    total_right_format = workbook.add_format({
+        'bold': True,
+        'border': 1,
+        'border_color': '#E5E7EB',
+        'bg_color': '#F3F4F6',
+        'align': 'right'
+    })
+
+    for sheet_name, df in ordered_sheets.items():
+        if df.empty and sheet_name != "Summary":
             continue
-        worksheet = workbook.add_worksheet(sheet_name[:31]) # Excel sheet name limit is 31 chars
+            
+        worksheet = workbook.add_worksheet(sheet_name[:31])
+        worksheet.set_row(0, 24) # Set header row height
         
-        # Write headers
-        headers = list(df.columns)
-        worksheet.write_row(0, 0, headers)
+        # Write headers with custom alignment for Summary sheet
+        for col_idx, col_name in enumerate(df.columns):
+            if sheet_name == "Summary":
+                if col_idx == 0:
+                    worksheet.write(0, col_idx, col_name, header_left_format)
+                else:
+                    worksheet.write(0, col_idx, col_name, header_right_format)
+            else:
+                worksheet.write(0, col_idx, col_name, header_format)
         
-        # Vectorized replacement of NA values
+        # Prepare clean data values
         df_clean = df.fillna("")
+        data_list = df_clean.values.tolist()
         
         # Write data rows
-        for row_idx, row in enumerate(df_clean.values.tolist(), start=1):
-            worksheet.write_row(row_idx, 0, row)
+        for row_idx, row in enumerate(data_list, start=1):
+            worksheet.set_row(row_idx, 20) # Set data row height
+            is_grand_total = (sheet_name == "Summary" and row_idx == len(data_list))
+            
+            for col_idx, val in enumerate(row):
+                if is_grand_total:
+                    if col_idx == 0:
+                        fmt = total_left_format
+                    else:
+                        fmt = total_right_format
+                else:
+                    fmt = cell_format
+                    if df.columns[col_idx] in ["Remarks", "Comments", "Row Labels"]:
+                        fmt = remarks_format
+                    elif df.columns[col_idx] in ["Count of Remarks"]:
+                        fmt = right_format
+                
+                # Write matching correct types
+                if isinstance(val, (int, float)) and not pd.isna(val):
+                    worksheet.write_number(row_idx, col_idx, val, fmt)
+                else:
+                    worksheet.write_string(row_idx, col_idx, str(val), fmt)
+        
+        # 4. Auto-fit column widths (sample up to 2000 rows for speed)
+        sample_size = min(len(df_clean), 2000)
+        for col_idx, col_name in enumerate(df.columns):
+            max_len = len(str(col_name))
+            if sample_size > 0:
+                max_len = max(max_len, df_clean.iloc[:sample_size, col_idx].astype(str).str.len().max())
+            worksheet.set_column(col_idx, col_idx, max(max_len + 3, 10))
             
     workbook.close()
 
