@@ -10,20 +10,20 @@ def inject_css():
     }
 
     .stApp {
-        background: #F8FAFC;
-        color: #111827;
+        background: #FDFBFF;
+        color: #1E1B4B;
     }
 
     section[data-testid="stSidebar"] {
-        background: #1E293B;
-        border-right: 1px solid #334155;
+        background: #F3E8FF;
+        border-right: 1px solid #E9D5FF;
     }
 
     section[data-testid="stSidebar"] .stSelectbox label,
     section[data-testid="stSidebar"] .stFileUploader label,
     section[data-testid="stSidebar"] h2,
     section[data-testid="stSidebar"] h3 {
-        color: #DBEAFE !important;
+        color: #6B21A8 !important;
         font-size: 0.82rem;
         font-weight: 600;
         letter-spacing: 0.05em;
@@ -32,42 +32,42 @@ def inject_css():
 
     [data-testid="metric-container"] {
         background: #ffffff;
-        border: 1px solid #DBEAFE;
+        border: 1px solid #E9D5FF;
         border-radius: 8px;
         padding: 12px 16px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 
     [data-testid="metric-container"] label {
-        color: #4B5563 !important;
+        color: #6B21A8 !important;
         font-size: 0.75rem !important;
     }
 
     [data-testid="metric-container"] [data-testid="stMetricValue"] {
-        color: #2563EB !important;
+        color: #7C3AED !important;
         font-family: 'IBM Plex Mono', monospace;
     }
 
     .stTabs [data-baseweb="tab-list"] {
-        background: #DBEAFE;
+        background: #F3E8FF;
         border-radius: 8px;
         padding: 4px;
     }
 
     .stTabs [data-baseweb="tab"] {
-        color: #4B5563;
+        color: #6B21A8;
         font-weight: 600;
         font-size: 0.82rem;
     }
 
     .stTabs [aria-selected="true"] {
-        color: #2563EB !important;
+        color: #7C3AED !important;
         background: #ffffff !important;
         border-radius: 6px;
     }
 
     .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #2563EB, #1D4ED8);
+        background: linear-gradient(135deg, #8B5CF6, #6D28D9);
         color: white;
         border: none;
         border-radius: 6px;
@@ -77,24 +77,24 @@ def inject_css():
     }
 
     .stButton > button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #3B82F6, #2563EB);
+        background: linear-gradient(135deg, #A78BFA, #7C3AED);
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
     }
 
     .stDataFrame {
-        border: 1px solid #DBEAFE;
+        border: 1px solid #E9D5FF;
         border-radius: 8px;
     }
 
     h1 {
-        color: #111827 !important;
+        color: #2E1065 !important;
         font-weight: 700 !important;
         letter-spacing: -0.02em !important;
     }
 
     h3 {
-        color: #111827 !important;
+        color: #2E1065 !important;
         font-weight: 600 !important;
         font-size: 1rem !important;
     }
@@ -102,7 +102,7 @@ def inject_css():
     .streamlit-expanderHeader {
         font-size: 0.85rem !important;
         font-weight: 600;
-        color: #111827 !important;
+        color: #2E1065 !important;
     }
 
     .stDownloadButton > button {
@@ -115,6 +115,13 @@ def inject_css():
 
     .stDownloadButton > button:hover {
         background: #16A34A;
+    }
+
+    /* Style the file uploader dropzones to be bold lilac dashed */
+    [data-testid="stFileUploaderDropzone"] {
+        border: 2px dashed #8B5CF6 !important;
+        border-radius: 8px;
+        background: #F5F3FF !important;
     }
     
     /* Listing QC Styles */
