@@ -112,12 +112,6 @@ def show_df(df, max_rows=500):
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("""
-        <div style="text-align: center; margin-bottom: 25px; padding-top: 10px;">
-            <h1 style="color: #D90429 !important; font-family: 'Helvetica Neue', Arial, sans-serif; font-weight: 900; letter-spacing: 0.15em; font-size: 2.3rem; margin: 0; text-transform: uppercase;">PUMA</h1>
-            <div style="height: 3px; background-color: #D90429; width: 60px; margin: 8px auto 0 auto;"></div>
-        </div>
-    """, unsafe_allow_html=True)
     st.markdown("## Task Selection")
     task = st.selectbox(
         "Select Task / Process",
@@ -176,7 +170,7 @@ with st.sidebar:
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-st.markdown('<h1 style="margin-bottom: 1.5rem;"><span style="color: #D90429;">PUMA</span> Automation (Status & Stock)</h1>', unsafe_allow_html=True)
+st.title("PUMA Automation (Status & Stock)")
 
 if task == "Status Validation":
     st.write("Country: " + country + "  |  Upload files in the sidebar then click Run Validation.")
