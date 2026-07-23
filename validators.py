@@ -873,43 +873,31 @@ def run_pid_validation(data, country):
 def save_df_to_excel_fast(sheets, file_or_buffer):
     """
     Write DataFrames to Excel with auto-fitted column widths, center alignment,
-    bold light blue headers, and a Summary sheet styled as a Pivot Table.
+    bold light blue headers, and a Summary sheet with side-by-side pivot tables
+    for Remarks and Max Setup.
     """
     import xlsxwriter
     import pandas as pd
     import numpy as np
+    from collections import Counter
 
-    # 1. Generate Summary sheet from Remarks
+    # 1. Generate Summary data
     all_remarks = []
+    all_max_setup = []
     for df in sheets.values():
         if "Remarks" in df.columns:
             all_remarks.extend(df["Remarks"].fillna("").astype(str).str.strip().tolist())
+        if "Max Setup" in df.columns:
+            all_max_setup.extend(df["Max Setup"].fillna("").astype(str).str.strip().tolist())
     
-    # Exclude empty values or common placeholders
     clean_remarks = [r for r in all_remarks if r and r not in ("", "#N/A", "nan", "None")]
+    clean_max_setup = [m for m in all_max_setup if m and m not in ("", "#N/A", "nan", "None")]
     
-    from collections import Counter
-    counts = Counter(clean_remarks)
-    summary_rows = []
-    total_count = 0
-    for remark, cnt in counts.most_common():
-        summary_rows.append({
-            "Row Labels": remark,
-            "Count of Remarks": cnt
-        })
-        total_count += cnt
-        
-    if summary_rows:
-        summary_rows.append({
-            "Row Labels": "Grand Total",
-            "Count of Remarks": total_count
-        })
-    summary_df = pd.DataFrame(summary_rows)
+    remarks_counts = Counter(clean_remarks).most_common()
+    max_setup_counts = Counter(clean_max_setup).most_common()
     
-    # 2. Re-order sheets so Summary is first (if summary has entries)
-    ordered_sheets = {}
-    if not summary_df.empty:
-        ordered_sheets["Summary"] = summary_df
+    # 2. Re-order sheets so Summary is first
+    ordered_sheets = {"Summary": pd.DataFrame()}
     for k, v in sheets.items():
         ordered_sheets[k] = v
 
@@ -985,21 +973,66 @@ def save_df_to_excel_fast(sheets, file_or_buffer):
     })
 
     for sheet_name, df in ordered_sheets.items():
-        if df.empty and sheet_name != "Summary":
+        worksheet = workbook.add_worksheet(sheet_name[:31])
+        
+        # ── Case A: Write custom Summary layout ──────────────────────────────────
+        if sheet_name == "Summary":
+            worksheet.set_row(0, 24) # Set header row height
+            
+            # Table 1: Remarks (Cols A and B)
+            worksheet.write(0, 0, "Row Labels", header_left_format)
+            worksheet.write(0, 1, "Count of Remarks", header_right_format)
+            
+            remarks_total = 0
+            current_row = 1
+            for label, cnt in remarks_counts:
+                worksheet.set_row(current_row, 20)
+                worksheet.write_string(current_row, 0, str(label), remarks_format)
+                worksheet.write_number(current_row, 1, cnt, right_format)
+                remarks_total += cnt
+                current_row += 1
+                
+            worksheet.set_row(current_row, 20)
+            worksheet.write_string(current_row, 0, "Grand Total", total_left_format)
+            worksheet.write_number(current_row, 1, remarks_total, total_right_format)
+            
+            # Table 2: Max Setup (Cols D and E)
+            worksheet.write(0, 3, "Row Labels", header_left_format)
+            worksheet.write(0, 4, "Count of Max Setup", header_right_format)
+            
+            max_setup_total = 0
+            current_row = 1
+            for label, cnt in max_setup_counts:
+                worksheet.set_row(current_row, 20)
+                worksheet.write_string(current_row, 3, str(label), remarks_format)
+                worksheet.write_number(current_row, 4, cnt, right_format)
+                max_setup_total += cnt
+                current_row += 1
+                
+            worksheet.set_row(current_row, 20)
+            worksheet.write_string(current_row, 3, "Grand Total", total_left_format)
+            worksheet.write_number(current_row, 4, max_setup_total, total_right_format)
+            
+            # Widths & Spacing
+            worksheet.set_column(2, 2, 4) # Spacer column C
+            
+            max_a = max([len(str(x[0])) for x in remarks_counts] + [len("Row Labels"), len("Grand Total")]) + 3
+            max_b = max([len(str(x[1])) for x in remarks_counts] + [len("Count of Remarks")]) + 3
+            worksheet.set_column(0, 0, max(max_a, 12))
+            worksheet.set_column(1, 1, max(max_b, 16))
+            
+            max_d = max([len(str(x[0])) for x in max_setup_counts] + [len("Row Labels"), len("Grand Total")]) + 3
+            max_e = max([len(str(x[1])) for x in max_setup_counts] + [len("Count of Max Setup")]) + 3
+            worksheet.set_column(3, 3, max(max_d, 12))
+            worksheet.set_column(4, 4, max(max_e, 18))
+            continue
+
+        # ── Case B: Write standard validation sheet layout ──────────────────────
+        if df.empty:
             continue
             
-        worksheet = workbook.add_worksheet(sheet_name[:31])
         worksheet.set_row(0, 24) # Set header row height
-        
-        # Write headers with custom alignment for Summary sheet
-        for col_idx, col_name in enumerate(df.columns):
-            if sheet_name == "Summary":
-                if col_idx == 0:
-                    worksheet.write(0, col_idx, col_name, header_left_format)
-                else:
-                    worksheet.write(0, col_idx, col_name, header_right_format)
-            else:
-                worksheet.write(0, col_idx, col_name, header_format)
+        worksheet.write_row(0, 0, list(df.columns), header_format)
         
         # Prepare clean data values
         df_clean = df.fillna("")
@@ -1008,20 +1041,10 @@ def save_df_to_excel_fast(sheets, file_or_buffer):
         # Write data rows
         for row_idx, row in enumerate(data_list, start=1):
             worksheet.set_row(row_idx, 20) # Set data row height
-            is_grand_total = (sheet_name == "Summary" and row_idx == len(data_list))
-            
             for col_idx, val in enumerate(row):
-                if is_grand_total:
-                    if col_idx == 0:
-                        fmt = total_left_format
-                    else:
-                        fmt = total_right_format
-                else:
-                    fmt = cell_format
-                    if df.columns[col_idx] in ["Remarks", "Comments", "Row Labels"]:
-                        fmt = remarks_format
-                    elif df.columns[col_idx] in ["Count of Remarks"]:
-                        fmt = right_format
+                fmt = cell_format
+                if df.columns[col_idx] in ["Remarks", "Comments"]:
+                    fmt = remarks_format
                 
                 # Write matching correct types
                 if isinstance(val, (int, float)) and not pd.isna(val):
@@ -1029,7 +1052,7 @@ def save_df_to_excel_fast(sheets, file_or_buffer):
                 else:
                     worksheet.write_string(row_idx, col_idx, str(val), fmt)
         
-        # 4. Auto-fit column widths (sample up to 2000 rows for speed)
+        # Auto-fit column widths (sample up to 2000 rows for speed)
         sample_size = min(len(df_clean), 2000)
         for col_idx, col_name in enumerate(df.columns):
             max_len = len(str(col_name))
