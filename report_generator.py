@@ -31,13 +31,16 @@ def _normalise_status(status):
 
 
 def _normalise_article_no(val):
-    """Standardise Article No separators/case for cross-file matching."""
+    """
+    Normalise Article No for matching across files.
+    Strips all non-alphanumeric characters (spaces, hyphens, underscores)
+    and converts to uppercase for absolute matching tolerance.
+    """
     s = _safe_str(val)
     if not s:
         return ""
     s = s.strip().upper()
-    s = re.sub(r'[\s\-]+', '_', s)
-    s = s.strip('_')
+    s = re.sub(r'[^A-Z0-9]+', '', s)
     return s
 
 

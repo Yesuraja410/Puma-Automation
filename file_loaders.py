@@ -1176,20 +1176,14 @@ def load_zecom(file, country="PH"):
 def _normalise_article_no(val):
     """
     Normalise Article No for matching across files.
-    Different files use different separators for the same code:
-      531103_03  /  531103-03  /  531103 03  /  53110303
-    Standardise to underscore format: keep digits/letters, replace
-    any of [' ', '-'] with '_', collapse multiple separators,
-    and strip leading/trailing whitespace. Also uppercase.
+    Strips all non-alphanumeric characters (spaces, hyphens, underscores)
+    and converts to uppercase for absolute matching tolerance.
     """
     s = _safe_str(val)
     if not s:
         return ""
     s = s.strip().upper()
-    # Replace common separators with underscore
-    s = re.sub(r'[\s\-]+', '_', s)
-    # Remove any trailing/leading underscores
-    s = s.strip('_')
+    s = re.sub(r'[^A-Z0-9]+', '', s)
     return s
 
 
@@ -1216,8 +1210,9 @@ def load_exclusion(file):
 
     # ── Try standard layout first: explicit Article No + Status columns ──────
     art_col = None
-    for c in ["Article No", "ArticleNo", "Article Number",
-              "STYLE#", "Style#", "style#", "Style #", "STYLE #"]:
+    for c in ["Article No", "ArticleNo", "Article_No", "Article", "Style", "Style_No",
+              "STYLE#", "Style#", "style#", "Style #", "STYLE #",
+              "Article Number", "ALU_No", "ALU", "Aricle No", "Color No", "Color_No"]:
         if c in df.columns:
             art_col = c
             break

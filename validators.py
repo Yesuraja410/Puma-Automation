@@ -61,17 +61,14 @@ def _is_valid_sku(sku):
 def _normalise_article_no(val):
     """
     Normalise Article No for cross-file matching.
-    Standardise separators (space/hyphen -> underscore), uppercase,
-    strip leading/trailing underscores.
-    Same logic as file_loaders._normalise_article_no, kept local to
-    avoid cross-module import dependency.
+    Strips all non-alphanumeric characters (spaces, hyphens, underscores)
+    and converts to uppercase for absolute matching tolerance.
     """
     s = _safe_str(val)
     if not s:
         return ""
     s = s.strip().upper()
-    s = re.sub(r'[\s\-]+', '_', s)
-    s = s.strip('_')
+    s = re.sub(r'[^A-Z0-9]+', '', s)
     return s
 
 
