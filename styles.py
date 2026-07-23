@@ -9,9 +9,12 @@ def inject_css():
         font-family: 'IBM Plex Sans', sans-serif;
     }
 
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    [data-testid="stHeader"],
     .stApp {
-        background: #FDFBFF;
-        color: #1E1B4B;
+        background: #FAF5FF !important;
+        color: #1E1B4B !important;
     }
 
     section[data-testid="stSidebar"] {
