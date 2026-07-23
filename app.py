@@ -16,32 +16,7 @@ from file_loaders import load_all_files
 from validators import run_sku_validation, run_pid_validation, save_df_to_excel_fast
 from report_generator import generate_status_report
 from styles import inject_css
-from order_processor import process_and_validate_orders
-from email_sender import test_smtp_connection, send_seller_report_email
-
-# Import Listing QC modules
-from listing_qc_validator.utils.file_loaders import (
-    load_file_to_df as lqc_load_file_to_df, 
-    load_google_sheet as lqc_load_google_sheet, 
-    auto_map_columns as lqc_auto_map_columns, 
-    standardize_dataframe as lqc_standardize_dataframe,
-    CANONICAL_LABELS as LQC_CANONICAL_LABELS,
-    load_content as lqc_load_content,
-    load_zecom as lqc_load_zecom,
-    _safe_str as lqc_safe_str,
-    load_excel_all_sheets as lqc_load_excel_all_sheets,
-    process_live_files as lqc_process_live_files
-)
-from listing_qc_validator.utils.validators import (
-    validate_dataframe as lqc_validate_dataframe, 
-    compare_source_and_live as lqc_compare_source_and_live,
-    ALLOWED_GENDERS as LQC_ALLOWED_GENDERS,
-    ALLOWED_STATUSES as LQC_ALLOWED_STATUSES
-)
-from listing_qc_validator.utils.report_generator import (
-    generate_qc_excel_report as lqc_generate_qc_excel_report,
-    generate_comparison_excel_report as lqc_generate_comparison_excel_report
-)
+# Removed order and listing imports for Status Validation only build
 
 inject_css()
 
@@ -140,22 +115,10 @@ with st.sidebar:
     st.markdown("## Task Selection")
     task = st.selectbox(
         "Select Task / Process",
-        ["Status Validation", "Status validation QC", "Order & OMS Validation", "Listing QC"],
+        ["Status Validation", "Status validation QC"],
         key="selected_task"
     )
     st.markdown("---")
-
-    # Initialize all Order & OMS marketplace validation variables to None by default
-    laz_sg_order = None
-    laz_my_order = None
-    laz_ph_order = None
-    shp_sg_order = None
-    shp_my_order = None
-    shp_ph_order = None
-    zal_sg_order = None
-    zal_my_order = None
-    zal_ph_order = None
-    ttk_my_order = None
 
     if task in ["Status Validation", "Status validation QC"]:
         st.markdown("## Configuration")
@@ -201,199 +164,13 @@ with st.sidebar:
             run_qc_btn = st.button("Run QC Cross-Check", type="primary", use_container_width=True)
             run_btn = False
 
-    
-    elif task == "Order & OMS Validation":
-        # Fallbacks for Status Validation
-        country = "SG"
-        laz = None
-        sh_stk = None
-        sh_sts = None
-        zal_stk = None
-        zal_sts = None
-        tt_act = None
-        tt_ina = None
-        cnt = None
-        tc = None
-        zec = None
-        alf = None
-        excl = None
-        run_btn = False
-        working_file = None
-        run_qc_btn = False
-
-        st.markdown("## Order & OMS Validation")
-        with st.expander("Upload Order Reports", expanded=True):
-            pending_source = st.radio("1. Pending Order Report Source", ["Upload File", "Google Sheet Link"], index=0, key="order_pending_source")
-            if pending_source == "Upload File":
-                order_pending = st.file_uploader("Pending Order Report", type=["xlsx","xls","csv"], key="order_pending")
-            else:
-                gsheet_url = st.text_input("Enter Google Sheet Link", placeholder="https://docs.google.com/spreadsheets/d/...", key="order_pending_gsheet")
-                order_pending = gsheet_url if gsheet_url.strip() else None
-
-            order_tc = st.file_uploader("TC Order Report", type=["xlsx","xls","csv"], key="order_tc")
-            order_oms = st.file_uploader("OMS Order Report", type=["xlsx","xls","csv"], key="order_oms")
-            seller_contacts = st.file_uploader("Seller Contact List (Optional)", type=["xlsx","xls","csv"], key="seller_contacts")
-
-        with st.expander("Upload Marketplace Reports (10 Channels)", expanded=False):
-            st.markdown("### Lazada")
-            laz_sg_order = st.file_uploader("Lazada SG Order Report", type=["xlsx","xls","csv"], key="laz_sg_order")
-            laz_my_order = st.file_uploader("Lazada MY Order Report", type=["xlsx","xls","csv"], key="laz_my_order")
-            laz_ph_order = st.file_uploader("Lazada PH Order Report", type=["xlsx","xls","csv"], key="laz_ph_order")
-            
-            st.markdown("### Shopee")
-            shp_sg_order = st.file_uploader("Shopee SG Order Report", type=["xlsx","xls","csv"], key="shp_sg_order")
-            shp_my_order = st.file_uploader("Shopee MY Order Report", type=["xlsx","xls","csv"], key="shp_my_order")
-            shp_ph_order = st.file_uploader("Shopee PH Order Report", type=["xlsx","xls","csv"], key="shp_ph_order")
-            
-            st.markdown("### Zalora")
-            zal_sg_order = st.file_uploader("Zalora SG Order Report", type=["xlsx","xls","csv"], key="zal_sg_order")
-            zal_my_order = st.file_uploader("Zalora MY Order Report", type=["xlsx","xls","csv"], key="zal_my_order")
-            zal_ph_order = st.file_uploader("Zalora PH Order Report", type=["xlsx","xls","csv"], key="zal_ph_order")
-            
-            st.markdown("### TikTok")
-            ttk_my_order = st.file_uploader("TikTok MY Order Report", type=["xlsx","xls","csv"], key="ttk_my_order")
-
-    elif task == "Listing QC":
-        # Fallbacks for Status Validation
-        country = "SG"
-        laz = None
-        sh_stk = None
-        sh_sts = None
-        zal_stk = None
-        zal_sts = None
-        tt_act = None
-        tt_ina = None
-        cnt = None
-        tc = None
-        zec = None
-        alf = None
-        excl = None
-        run_btn = False
-        working_file = None
-        run_qc_btn = False
-
-        # Fallbacks for Order Validation
-        order_pending = None
-        order_tc = None
-        order_oms = None
-        seller_contacts = None
-
-        st.markdown("## Listing QC Configuration")
-        with st.expander("Listing QC Uploads & Settings", expanded=True):
-            CHANNELS = [
-                "Lazada SG", "Lazada MY", "Lazada PH",
-                "Shopee SG", "Shopee MY", "Shopee PH",
-                "Zalora SG", "Zalora MY", "Zalora PH",
-                "TikTok MY"
-            ]
-            lqc_channel = st.selectbox(
-                "Target Marketplace Channel",
-                options=CHANNELS,
-                index=CHANNELS.index("Shopee PH") if "Shopee PH" in CHANNELS else 5,
-                key="lqc_channel_select"
-            )
-            st.session_state.lqc_channel = lqc_channel
-            
-            channel_parts = lqc_channel.split()
-            lqc_platform = channel_parts[0]
-            lqc_country = channel_parts[1]
-
-            lqc_qc_stage = st.selectbox(
-                "QC Process Stage",
-                ["Internal QC", "Post QC"],
-                help="Internal QC validates pre-listing fields. Post QC includes image links, size charts, and live list audits.",
-                key="lqc_qc_stage_select"
-            )
-            st.session_state.lqc_qc_stage = lqc_qc_stage
-
-            st.markdown("---")
-            st.markdown("### Upload Reference Files")
-            
-            lqc_content_file = st.file_uploader(
-                "Upload Content File (EAN, UK Size reference)",
-                type=["xlsx", "xls", "csv"],
-                key="lqc_ref_content"
-            )
-            
-            lqc_zecom_file = st.file_uploader(
-                "Upload zEcom File (Ecom Status, RRP Price reference)",
-                type=["xlsx", "xls", "csv"],
-                key="lqc_ref_zecom"
-            )
-            
-            lqc_live_files = []
-            if lqc_qc_stage == "Post QC":
-                st.markdown("---")
-                st.markdown("### Upload Live Marketplace Reports")
-                lqc_live_files = st.file_uploader(
-                    "Upload Live Reports (Excel, CSV, or ZIP)",
-                    type=["xlsx", "xls", "csv", "zip"],
-                    accept_multiple_files=True,
-                    key="lqc_live_reports"
-                )
-
-            st.markdown("---")
-            st.markdown("### Upload Target Listings Sheet")
-            
-            lqc_uploaded_files = st.file_uploader(
-                "Upload Target Sheets (Excel/CSV)",
-                type=["xlsx", "xls", "csv"],
-                accept_multiple_files=True,
-                key="lqc_target_uploader"
-            )
-            
-            st.markdown("---")
-            lqc_gsheet_urls_str = st.text_area(
-                "Google Sheets Share Links (One URL per line)",
-                placeholder="https://docs.google.com/spreadsheets/d/...\nhttps://docs.google.com/spreadsheets/d/...",
-                key="lqc_gsheet_urls_area"
-            )
-            
-            with st.expander("Genders & Statuses Config"):
-                lqc_custom_genders_str = st.text_input(
-                    "Allowed Genders",
-                    value=", ".join(LQC_ALLOWED_GENDERS),
-                    key="lqc_genders_input"
-                )
-                lqc_custom_genders = [g.strip().lower() for g in lqc_custom_genders_str.split(",") if g.strip()]
-                
-                lqc_custom_statuses_str = st.text_input(
-                    "Allowed Ecom Statuses",
-                    value=", ".join(LQC_ALLOWED_STATUSES),
-                    key="lqc_statuses_input"
-                )
-                lqc_custom_statuses = [s.strip().lower() for s in lqc_custom_statuses_str.split(",") if s.strip()]
-                
-                lqc_check_live_images = st.checkbox("Live HTTP Image Check", value=False, key="lqc_images_check")
-
-    # Double check fallbacks for the other tasks if they are not selected
-    if task != "Order & OMS Validation":
-        order_pending = None
-        order_tc = None
-        order_oms = None
-        seller_contacts = None
-
-    if task != "Listing QC":
-        lqc_channel = "Shopee PH"
-        lqc_platform = "Shopee"
-        lqc_country = "PH"
-        lqc_qc_stage = "Internal QC"
-        lqc_content_file = None
-        lqc_zecom_file = None
-        lqc_live_files = []
-        lqc_uploaded_files = []
-        lqc_gsheet_urls_str = ""
-        lqc_custom_genders = []
-        lqc_custom_statuses = []
-        lqc_check_live_images = False
-
     if task != "Status validation QC":
         working_file = None
         run_qc_btn = False
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-st.title("PUMA Automation (Status & Stock, Order Valiation, Listing QC)")
+st.title("PUMA Automation (Status & Stock)")
 
 if task == "Status Validation":
     st.write("Country: " + country + "  |  Upload files in the sidebar then click Run Validation.")
@@ -430,7 +207,7 @@ if task == "Status Validation":
                             st.write(k + " -> " + str(list(v.columns)))
 
                 # Exclusion check
-                from validators import _build_article_map, _build_excl_map
+                from validators import _build_article_map, _build_excl_map, _normalise_article_no
                 excl_df     = data.get("exclusion", pd.DataFrame())
                 content_df  = data.get("content", pd.DataFrame())
                 if excl_df is not None and not excl_df.empty:
@@ -444,7 +221,8 @@ if task == "Status Validation":
                             "File with 'SKU' and 'Article No' columns."
                         )
                     else:
-                        matched = set(art_map.values()) & set(excl_map.keys())
+                        norm_art_vals = {_normalise_article_no(v) for v in art_map.values()}
+                        matched = norm_art_vals & set(excl_map.keys())
                         if matched:
                             st.success("Exclusion OK: " + str(len(matched)) + " Article Nos matched.")
                         else:
@@ -1041,255 +819,6 @@ elif task == "Status validation QC":
                         except Exception as e:
                             st.error("Failed to generate QC Excel report: " + str(e))
 
-                st.rerun()
-
-elif task == "Order & OMS Validation":
-    st.write("Upload files in the sidebar then click Run Order Validation & Analysis.")
-    tab1, = st.tabs(["Order & OMS Validation"])
-    
-    with tab1:
-        st.markdown("### Order SLA Enrichment & OMS Status Validation")
-        st.caption("Upload the Pending Order Report, TC Order Report, and OMS Order Report in the sidebar to run validations and email reports directly to the sellers.")
-        
-        # Check if files are uploaded
-        if not (order_pending and order_tc and order_oms):
-            st.info("Please upload the Pending Order Report, TC Order Report, and OMS Order Report in the sidebar under 'Order & OMS Validation' to get started.")
-        else:
-            # Create a button to run the validation
-            if st.button("Run Order Validation & Analysis", type="primary", use_container_width=True):
-                with st.spinner("Processing reports and running validations..."):
-                    try:
-                        marketplace_files = {
-                            "Lazada SG": laz_sg_order,
-                            "Lazada MY": laz_my_order,
-                            "Lazada PH": laz_ph_order,
-                            "Shopee SG": shp_sg_order,
-                            "Shopee MY": shp_my_order,
-                            "Shopee PH": shp_ph_order,
-                            "Zalora SG": zal_sg_order,
-                            "Zalora MY": zal_my_order,
-                            "Zalora PH": zal_ph_order,
-                            "TikTok MY": ttk_my_order
-                        }
-                        res = process_and_validate_orders(order_pending, order_tc, order_oms, seller_contacts, marketplace_files)
-                        st.session_state["order_enriched_df"] = res["enriched_pending_df"]
-                        st.session_state["order_disc_df"] = res["discrepancies_df"]
-                        st.session_state["order_summary"] = res["summary"]
-                        st.session_state["order_groups"] = res["seller_groups"]
-                        st.session_state["order_id_col"] = res["pending_order_id_col"]
-                        st.session_state["order_missing_mp_df"] = res["missing_mp_df"]
-                        st.session_state["order_mp_summary_df"] = res["mp_summary_df"]
-                        st.success("Validation complete! See results below.")
-                    except Exception as e:
-                        st.error(f"Error during order processing: {str(e)}")
-                        st.exception(e)
-                        
-            # Check if we have results in session_state
-            if "order_summary" in st.session_state:
-                summary = st.session_state["order_summary"]
-                enriched_df = st.session_state["order_enriched_df"]
-                disc_df = st.session_state["order_disc_df"]
-                seller_groups = st.session_state["order_groups"]
-                missing_mp_df = st.session_state.get("order_missing_mp_df", pd.DataFrame())
-                mp_summary_df = st.session_state.get("order_mp_summary_df", pd.DataFrame())
-                
-                # Display metrics
-                st.markdown("#### Key Metrics")
-                if not mp_summary_df.empty:
-                    m1, m2, m3, m4, m5 = st.columns(5)
-                    m1.metric("Total Pending Orders", summary["total_pending_orders"])
-                    m2.metric("Enriched SLAs from TC", summary["enriched_sla_count"])
-                    m3.metric("Validation Mismatches", summary["total_discrepancies"], delta=-summary["total_discrepancies"] if summary["total_discrepancies"] > 0 else 0, delta_color="inverse")
-                    m4.metric("Total Sellers / Stores", summary["total_sellers"])
-                    total_missing_mp = summary.get("total_missing_mp_orders", 0)
-                    m5.metric("Marketplace Missing in TC", total_missing_mp, delta=-total_missing_mp if total_missing_mp > 0 else 0, delta_color="inverse")
-                else:
-                    m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("Total Pending Orders", summary["total_pending_orders"])
-                    m2.metric("Enriched SLAs from TC", summary["enriched_sla_count"])
-                    m3.metric("Validation Mismatches", summary["total_discrepancies"], delta=-summary["total_discrepancies"] if summary["total_discrepancies"] > 0 else 0, delta_color="inverse")
-                    m4.metric("Total Sellers / Stores", summary["total_sellers"])
-                
-                # Download Section
-                st.markdown("#### Download Report")
-                excel_buffer = io.BytesIO()
-                order_sheets = {
-                    "Enriched Pending Orders": enriched_df,
-                    "Status Discrepancies": disc_df,
-                    "Missing Marketplace Orders": missing_mp_df,
-                    "Marketplace Match Summary": mp_summary_df
-                }
-                save_df_to_excel_fast(order_sheets, excel_buffer)
-                
-                st.download_button(
-                    label="📥 Download Enriched Pending Orders & Discrepancies (Excel)",
-                    data=excel_buffer.getvalue(),
-                    file_name=f"Order_Validation_Report_{datetime.today().strftime('%Y-%m-%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="dl_consolidated"
-                )
-                
-                # Display layout of tables
-                st.markdown("#### Detailed Results")
-                
-                tabs_list = ["Enriched Pending Orders", "OMS vs TC Discrepancies", "Seller Grouping & Email Center"]
-                if not mp_summary_df.empty:
-                    tabs_list.append("Marketplace Order Validation")
-                    
-                sub_tabs = st.tabs(tabs_list)
-                sub_tab1 = sub_tabs[0]
-                sub_tab2 = sub_tabs[1]
-                sub_tab3 = sub_tabs[2]
-                sub_tab4 = sub_tabs[3] if len(sub_tabs) > 3 else None
-                
-                with sub_tab1:
-                    st.markdown("##### Enriched Pending Orders Report")
-                    st.dataframe(enriched_df, use_container_width=True, hide_index=True)
-                    
-                with sub_tab2:
-                    st.markdown("##### Validation Failures & Status Discrepancies")
-                    if disc_df.empty:
-                        st.success("No status discrepancies or validation failures identified!")
-                    else:
-                        st.warning(f"Found {len(disc_df)} discrepancies/warnings.")
-                        st.dataframe(disc_df, use_container_width=True, hide_index=True)
-                        
-                with sub_tab3:
-                    st.markdown("##### SMTP Email Configuration")
-                    # Load credentials from secrets or default to empty
-                    secrets_smtp = st.secrets.get("smtp", {}) if st.secrets else {}
-                    
-                    # Show expander for email settings
-                    with st.expander("Configure SMTP Email Settings"):
-                        c_host = st.text_input("SMTP Server Host", value=secrets_smtp.get("host", "smtp.office365.com"), key="smtp_host")
-                        c_port = st.text_input("SMTP Port", value=str(secrets_smtp.get("port", 587)), key="smtp_port")
-                        c_user = st.text_input("SMTP Username", value=secrets_smtp.get("user", ""), key="smtp_user")
-                        c_pass = st.text_input("SMTP Password", type="password", value=secrets_smtp.get("password", ""), key="smtp_pass")
-                        c_sender = st.text_input("Sender Email Address", value=secrets_smtp.get("sender_email", c_user), key="smtp_sender")
-                        c_tls = st.checkbox("Use TLS", value=secrets_smtp.get("use_tls", True), key="smtp_tls")
-                        
-                        if st.button("Test Connection"):
-                            is_ok, msg = test_smtp_connection(c_host, c_port, c_user, c_pass, c_tls)
-                            if is_ok:
-                                st.success(msg)
-                            else:
-                                st.error(msg)
-                                
-                    # Display Sellers list
-                    st.markdown("##### Send Daily Report to Sellers")
-                    smtp_config = {
-                        "host": c_host,
-                        "port": c_port,
-                        "user": c_user,
-                        "password": c_pass,
-                        "sender_email": c_sender,
-                        "use_tls": c_tls
-                    }
-                    
-                    st.info("You can send the filtered Excel report directly to each seller. Make sure to specify their email address below.")
-                    
-                    send_all_btn = st.button("Send Reports to All Sellers", type="secondary", use_container_width=True)
-                    
-                    seller_email_inputs = {}
-                    for idx, (seller_name, info) in enumerate(seller_groups.items()):
-                        with st.container():
-                            col1, col2, col3, col4 = st.columns([3, 4, 2, 2])
-                            col1.markdown(f"**{seller_name}**")
-                            col2.write(f"Orders: {len(info['df'])}")
-                            
-                            default_email = info["email"]
-                            recipient = col3.text_input("Email", value=default_email, key=f"email_{seller_name}_{idx}", label_visibility="collapsed")
-                            seller_email_inputs[seller_name] = recipient
-                            
-                            send_single = col4.button("Send Email", key=f"send_{seller_name}_{idx}", use_container_width=True)
-                            if send_single:
-                                if not recipient:
-                                    st.error("Please enter a valid email address.")
-                                else:
-                                    with st.spinner(f"Sending email to {seller_name}..."):
-                                        ok, msg = send_seller_report_email(smtp_config, seller_name, recipient, info["df"], disc_df)
-                                        if ok:
-                                            st.success(f"Sent to {seller_name}!")
-                                        else:
-                                            st.error(msg)
-                                            
-                if send_all_btn:
-                    success_count = 0
-                    fail_count = 0
-                    progress_bar = st.progress(0)
-                    total_sellers = len(seller_groups)
-                    
-                    for i, (seller_name, info) in enumerate(seller_groups.items()):
-                        recipient = seller_email_inputs[seller_name]
-                        if not recipient:
-                            st.warning(f"Skipping {seller_name} - No email specified.")
-                            fail_count += 1
-                        else:
-                            ok, msg = send_seller_report_email(smtp_config, seller_name, recipient, info["df"], disc_df)
-                            if ok:
-                                success_count += 1
-                            else:
-                                st.error(f"Failed for {seller_name}: {msg}")
-                                fail_count += 1
-                        progress_bar.progress((i + 1) / total_sellers)
-                    
-                    st.success(f"Finished sending! Success: {success_count}, Failed/Skipped: {fail_count}")
-
-                if sub_tab4 is not None:
-                    with sub_tab4:
-                        st.markdown("##### Marketplace Order Reports vs TC Sync Status")
-                        st.markdown("This audit compares uploaded marketplace order reports against the TC Order Report to highlight missing orders.")
-                        
-                        st.markdown("###### Channel Sync Summary")
-                        st.dataframe(mp_summary_df, use_container_width=True, hide_index=True)
-                        
-                        st.markdown("###### Detailed Missing Orders (Not in TC)")
-                        if missing_mp_df.empty:
-                            st.success("🎉 All uploaded marketplace orders match TC perfectly!")
-                        else:
-                            total_missing = len(missing_mp_df)
-                            st.warning(f"⚠️ Found {total_missing} marketplace orders missing from the TC report.")
-                            
-                            # Filter option for channel
-                            channels_found = sorted(missing_mp_df["Channel"].unique())
-                            selected_channels = st.multiselect("Filter by Marketplace Channel", channels_found, default=channels_found, key="mp_channel_filter")
-                            filtered_missing_df = missing_mp_df[missing_mp_df["Channel"].isin(selected_channels)]
-                            
-                            st.dataframe(filtered_missing_df, use_container_width=True, hide_index=True)
-
-elif task == "Listing QC":
-    st.write("Upload target listings sheet and reference files in the sidebar to validate.")
-    tab1, = st.tabs(["Listing QC"])
-    
-    with tab1:
-        st.markdown("""
-        <div class="header-container">
-            <div class="main-title">Listing QC Validation Tool</div>
-            <div class="sub-title">Automated quality control validation and post-listing store sync analysis.</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        content_loaded = lqc_content_file is not None
-        zecom_loaded = lqc_zecom_file is not None
-        
-        upload_dfs = {}
-        if lqc_uploaded_files:
-            for f in lqc_uploaded_files:
-                try:
-                    if f.name.lower().endswith((".xlsx", ".xls")):
-                        sheets_dict = lqc_load_excel_all_sheets(f, channel=lqc_channel)
-                        for s_name, df in sheets_dict.items():
-                            upload_dfs[f"{f.name} - {s_name}"] = df
-                    else:
-                        df = lqc_load_file_to_df(f, channel=lqc_channel)
-                        upload_dfs[f.name] = df
-                except Exception as e:
-                    st.error(f"Error loading target file {f.name}: {e}")
-
-        import re
-        if lqc_gsheet_urls_str.strip():
-            if "lqc_gsheet_error" in st.session_state:
                 del st.session_state["lqc_gsheet_error"]
             gsheet_urls = [url.strip() for url in lqc_gsheet_urls_str.split("\n") if url.strip()]
             errors = []

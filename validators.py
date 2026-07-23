@@ -77,7 +77,7 @@ def _normalise_article_no(val):
 # ── Lookup builders ───────────────────────────────────────────────────────────
 
 def _build_article_map(content):
-    """SKU -> Article No (normalised). Tries multiple candidate columns."""
+    """SKU -> Article No (preserves original format). Tries multiple candidate columns."""
     article_map = {}
     if content.empty or "SKU" not in content.columns:
         return article_map
@@ -96,7 +96,10 @@ def _build_article_map(content):
         for sku, art in zip(skus, art_vals):
             sku_s = _safe_str(sku)
             if sku_s:
-                article_map[sku_s] = _normalise_article_no(art)
+                s_art = _safe_str(art).strip()
+                if s_art.endswith(".0"):
+                    s_art = s_art[:-2]
+                article_map[sku_s] = s_art
     return article_map
 
 
@@ -473,10 +476,10 @@ def run_sku_validation(data, country):
         df["Article No"] = df["Article No"].fillna("")
         
         # Check if Future Launch is True
-        df["Future Launch"] = df["Article No"].map(future_launch_map).fillna(False)
+        df["Future Launch"] = df["Article No"].apply(_normalise_article_no).map(future_launch_map).fillna(False)
 
-        # Join raw Ecom Status
-        df = df.join(ecom_series, on="Article No")
+        # Map raw Ecom Status on the fly using normalised Article No
+        df["Ecom Status"] = df["Article No"].apply(_normalise_article_no).map(ecom_map)
         
         # Resolve e-com (Yes/No) and ECOM Status columns
         ecom_raw = df["Ecom Status"]
@@ -499,9 +502,9 @@ def run_sku_validation(data, country):
         df["TC Stock"] = df["TC Stock"].fillna(0.0)
         df["Reserved Stock"] = df["Reserved Stock"].fillna(0.0)
         
-        df["Launch Date"] = df["Article No"].map(launch_map).fillna("")
+        df["Launch Date"] = df["Article No"].apply(_normalise_article_no).map(launch_map).fillna("")
         
-        excl_art = df["Article No"].map(excl_map)
+        excl_art = df["Article No"].apply(_normalise_article_no).map(excl_map)
         excl_sku = df["SKU_clean"].map(excl_map)
         df["Exclusion"] = excl_art.fillna(excl_sku).fillna("")
         
@@ -680,10 +683,10 @@ def run_pid_validation(data, country):
         df["Article No"] = df["Article No"].fillna("")
         
         # Check if Future Launch is True
-        df["Future Launch"] = df["Article No"].map(future_launch_map).fillna(False)
+        df["Future Launch"] = df["Article No"].apply(_normalise_article_no).map(future_launch_map).fillna(False)
 
-        # Join raw Ecom Status
-        df = df.join(ecom_series, on="Article No")
+        # Map raw Ecom Status on the fly using normalised Article No
+        df["Ecom Status"] = df["Article No"].apply(_normalise_article_no).map(ecom_map)
         
         # Resolve e-com (Yes/No) and ECOM Status columns
         ecom_raw = df["Ecom Status"]
@@ -706,9 +709,9 @@ def run_pid_validation(data, country):
         df["TC Stock"] = df["TC Stock"].fillna(0.0)
         df["Reserved Stock"] = df["Reserved Stock"].fillna(0.0)
         
-        df["Launch Date"] = df["Article No"].map(launch_map).fillna("")
+        df["Launch Date"] = df["Article No"].apply(_normalise_article_no).map(launch_map).fillna("")
         
-        excl_art = df["Article No"].map(excl_map)
+        excl_art = df["Article No"].apply(_normalise_article_no).map(excl_map)
         excl_sku = df["SKU_clean"].map(excl_map)
         df["Exclusion"] = excl_art.fillna(excl_sku).fillna("")
         

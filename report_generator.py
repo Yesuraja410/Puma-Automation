@@ -60,7 +60,10 @@ def _build_article_map(content):
         for _, r in content.iterrows():
             sku = _safe_str(r.get("SKU", ""))
             if sku:
-                article_map[sku] = _normalise_article_no(r.get(art_col, ""))
+                s_art = _safe_str(r.get(art_col, "")).strip()
+                if s_art.endswith(".0"):
+                    s_art = s_art[:-2]
+                article_map[sku] = s_art
     return article_map
 
 
@@ -272,11 +275,12 @@ def generate_status_report(data, country):
             mp_status  = _safe_str(row.get("MP Status", "Unknown"))
             mp_stock   = _safe_num(row.get("MP Stock", 0))
             article_no = article_map.get(sku, "")
-            ecom_st    = ecom_map.get(article_no, "Inactive") if article_no else "Inactive"
-            launch_dt  = launch_map.get(article_no, "") if article_no else ""
+            art_norm   = _normalise_article_no(article_no)
+            ecom_st    = ecom_map.get(art_norm, "Inactive") if art_norm else "Inactive"
+            launch_dt  = launch_map.get(art_norm, "") if art_norm else ""
             tc_data    = tc_map.get(sku, {"TC SKU": "", "TC Status": "Unknown", "Max 0": "No"})
             sd         = stock_map.get(sku, {"TC Stock": 0.0, "Reserved Stock": 0.0})
-            excl_lbl   = excl_map.get(article_no, "") if article_no else ""
+            excl_lbl   = excl_map.get(art_norm, "") if art_norm else ""
 
             frames.append({
                 "Marketplace":    mp_name,
